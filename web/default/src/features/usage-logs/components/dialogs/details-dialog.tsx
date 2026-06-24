@@ -30,7 +30,9 @@ import {
   UserCog,
   Info,
   LogIn,
+  FileJson,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
@@ -38,9 +40,11 @@ import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { getRequestResponseByLogId } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -533,6 +537,18 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
 
+  // Tab state for request/response viewer
+  const [activeTab, setActiveTab] = useState<'overview' | 'requestResponse'>('overview')
+  const [reqRespData, setReqRespData] = useState<{
+    request_body: string
+    response_body: string
+    is_completed: boolean
+    response_size: number
+    status_code: number
+  } | null>(null)
+  const [reqRespLoading, setReqRespLoading] = useState(false)
+  const [reqRespError, setReqRespError] = useState<string | null>(null)
+
   return (
     <Dialog
       open={props.open}
@@ -558,9 +574,40 @@ export function DetailsDialog(props: DetailsDialogProps) {
       titleClassName='flex items-center gap-2 text-base'
       descriptionClassName='sr-only'
       contentHeight='min(72dvh, 720px)'
-      bodyClassName='pr-2 sm:pr-4'
+      bodyClassName='space-y-4'
     >
-      <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+      {/* Tab navigation */}
+      <div className='flex items-center gap-1 border-b'>
+        <button
+          type='button'
+          onClick={() => setActiveTab('overview')}
+          className={cn(
+            'px-3 py-1.5 text-sm font-medium transition-colors',
+            activeTab === 'overview'
+              ? 'border-b-2 border-primary text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {t('Overview')}
+        </button>
+        <button
+          type='button'
+          onClick={() => setActiveTab('requestResponse')}
+          className={cn(
+            'flex items-center gap-1 px-3 py-1.5 text-sm font-medium transition-colors',
+            activeTab === 'requestResponse'
+              ? 'border-b-2 border-primary text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <FileJson className='size-3.5' />
+          {t('Request / Response')}
+        </button>
+      </div>
+
+      {activeTab === 'overview' ? (
+        <ScrollArea className='max-h-[70vh] min-w-0 overflow-hidden pr-2 max-sm:max-h-[calc(100dvh-7rem)] sm:pr-4'>
+        <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
           {props.log.request_id && (
@@ -1143,7 +1190,215 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </div>
         )}
       </div>
+        </ScrollArea>
+      ) : (
+        <ScrollArea className='max-h-[70vh] min-w-0 overflow-hidden pr-2 max-sm:max-h-[calc(100dvh-7rem)] sm:pr-4'>
+          <div className='w-full max-w-full min-w-0 space-y-3 overflow-hidden py-1'>
+            {/* Request/Response tab content */}
+            <ReqRespTabContent
+              logId={props.log.id}
+              reqRespData={reqRespData}
+              setReqRespData={setReqRespData}
+              reqRespLoading={reqRespLoading}
+              setReqRespLoading={setReqRespLoading}
+              reqRespError={reqRespError}
+              setReqRespError={setReqRespError}
+            />
+          </div>
+        </ScrollArea>
+      )}
     </Dialog>
+  )
+}
+
+// ReqRespTabContent 请求/响应标签页内容组件
+function ReqRespTabContent({
+  logId,
+  reqRespData,
+  setReqRespData,
+  reqRespLoading,
+  setReqRespLoading,
+  reqRespError,
+  setReqRespError,
+}: {
+  logId: number
+  reqRespData: { request_body: string; response_body: string; is_completed: boolean; response_size: number; status_code: number } | null
+  setReqRespData: (data: { request_body: string; response_body: string; is_completed: boolean; response_size: number; status_code: number } | null) => void
+  reqRespLoading: boolean
+  setReqRespLoading: (loading: boolean) => void
+  reqRespError: string | null
+  setReqRespError: (err: string | null) => void
+}) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+
+  // Load data on mount
+  if (!reqRespData && !reqRespLoading && !reqRespError) {
+    loadRequestResponseData()
+  }
+
+  async function loadRequestResponseData() {
+    setReqRespLoading(true)
+    setReqRespError(null)
+    try {
+      const res = await getRequestResponseByLogId(logId)
+      if (res.data?.success && res.data.data) {
+        setReqRespData(res.data.data)
+      } else {
+        setReqRespError(res.data?.message || t('Failed to load request/response data'))
+      }
+    } catch {
+      setReqRespError(t('Failed to load request/response data'))
+    } finally {
+      setReqRespLoading(false)
+    }
+  }
+
+  if (reqRespLoading) {
+    return (
+      <div className='flex items-center justify-center py-8'>
+        <div className='text-muted-foreground text-sm'>{t('Loading...')}</div>
+      </div>
+    )
+  }
+
+  if (reqRespError) {
+    return (
+      <div className='space-y-3'>
+        <div className='text-sm text-red-600 dark:text-red-400'>{reqRespError}</div>
+        <Button variant='outline' size='sm' onClick={loadRequestResponseData}>
+          {t('Retry')}
+        </Button>
+      </div>
+    )
+  }
+
+  if (!reqRespData) {
+    return (
+      <div className='text-muted-foreground text-sm'>{t('No data available')}</div>
+    )
+  }
+
+  const formatJson = (jsonStr: string) => {
+    try {
+      return JSON.stringify(JSON.parse(jsonStr), null, 2)
+    } catch {
+      return jsonStr
+    }
+  }
+
+  return (
+    <div className='space-y-4'>
+      {/* Status code */}
+      {reqRespData.status_code > 0 && (
+        <div className='flex items-center gap-2'>
+          <span className='text-muted-foreground text-xs'>{t('Status Code')}:</span>
+          <span
+            className={cn(
+              'font-mono text-sm',
+              reqRespData.status_code < 400
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-red-600 dark:text-red-400'
+            )}
+          >
+            {reqRespData.status_code}
+          </span>
+          {!reqRespData.is_completed && (
+            <span className='text-muted-foreground text-xs'>({t('Streaming')})</span>
+          )}
+        </div>
+      )}
+
+      {/* Request body */}
+      {reqRespData.request_body && (
+        <JsonBlock
+          label={t('Request Body')}
+          content={formatJson(reqRespData.request_body)}
+          copiedText={copiedText}
+          copyToClipboard={copyToClipboard}
+        />
+      )}
+
+      {/* Response body */}
+      {reqRespData.response_body ? (
+        <JsonBlock
+          label={t('Response Body')}
+          content={formatJson(reqRespData.response_body)}
+          copiedText={copiedText}
+          copyToClipboard={copyToClipboard}
+        />
+      ) : (
+        <div className='text-muted-foreground text-xs'>{t('No response body (streaming response)')}</div>
+      )}
+
+      {/* Response size info */}
+      {reqRespData.response_size > 0 && (
+        <div className='text-muted-foreground text-xs'>
+          {t('Response Size')}: {(reqRespData.response_size / 1024).toFixed(1)} KB
+        </div>
+      )}
+    </div>
+  )
+}
+
+function JsonBlock({
+  label,
+  content,
+  copiedText,
+  copyToClipboard,
+}: {
+  label: string
+  content: string
+  copiedText: string | null
+  copyToClipboard: (text: string) => void
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const maxPreviewLines = 50
+  const lines = content.split('\n')
+  const isLong = lines.length > maxPreviewLines
+
+  return (
+    <div className='space-y-1.5'>
+      <div className='flex items-center justify-between'>
+        <Label className='text-xs font-semibold'>{label}</Label>
+        <div className='flex items-center gap-1'>
+          {isLong && (
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-6 px-2 text-xs'
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? t('Collapse') : t('Expand')}
+            </Button>
+          )}
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-6 w-6 p-0'
+            onClick={() => copyToClipboard(content)}
+            title={t('Copy to clipboard')}
+          >
+            {copiedText === content ? (
+              <Check className='size-3.5 text-green-600' />
+            ) : (
+              <Copy className='size-3.5' />
+            )}
+          </Button>
+        </div>
+      </div>
+      <div className='bg-muted/30 relative overflow-hidden rounded-md border'>
+        <pre
+          className={cn(
+            'overflow-x-auto p-3 text-xs leading-relaxed whitespace-pre-wrap break-all',
+            !expanded && isLong && 'max-h-[300px]'
+          )}
+        >
+          {content}
+        </pre>
+      </div>
+    </div>
   )
 }
 

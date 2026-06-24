@@ -1,28 +1,28 @@
-# Component Composition
+# 组件组合
 
-## Contents
+## 目录
 
-- Items always inside their Group component
-- Callouts use Alert
-- Empty states use Empty component
-- Toast notifications use sonner
-- Choosing between overlay components
-- Dialog, Sheet, and Drawer always need a Title
-- Card structure
-- Button has no isPending or isLoading prop
-- TabsTrigger must be inside TabsList
-- Avatar always needs AvatarFallback
-- Use Separator instead of raw hr or border divs
-- Use Skeleton for loading placeholders
-- Use Badge instead of custom styled spans
+- Item 始终放在对应的 Group 组件内
+- 提示框使用 Alert
+- 空状态使用 Empty 组件
+- Toast 通知使用 sonner
+- 覆盖层组件之间如何选择
+- Dialog、Sheet 和 Drawer 始终需要 Title
+- Card 结构
+- Button 没有 isPending 或 isLoading 属性
+- TabsTrigger 必须在 TabsList 内
+- Avatar 始终需要 AvatarFallback
+- 使用 Separator 而非原始 hr 或 border div
+- 使用 Skeleton 作为加载占位符
+- 使用 Badge 而非自定义样式的 span
 
 ---
 
-## Items always inside their Group component
+## Item 始终放在对应的 Group 组件内
 
-Never render items directly inside the content container.
+切勿直接在内容容器中渲染 item。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <SelectContent>
@@ -31,7 +31,7 @@ Never render items directly inside the content container.
 </SelectContent>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <SelectContent>
@@ -42,19 +42,19 @@ Never render items directly inside the content container.
 </SelectContent>
 ```
 
-This applies to all group-based components:
+这适用于所有基于 Group 的组件：
 
 | Item | Group |
 |------|-------|
-| `SelectItem`, `SelectLabel` | `SelectGroup` |
-| `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSub` | `DropdownMenuGroup` |
+| `SelectItem`、`SelectLabel` | `SelectGroup` |
+| `DropdownMenuItem`、`DropdownMenuLabel`、`DropdownMenuSub` | `DropdownMenuGroup` |
 | `MenubarItem` | `MenubarGroup` |
 | `ContextMenuItem` | `ContextMenuGroup` |
 | `CommandItem` | `CommandGroup` |
 
 ---
 
-## Callouts use Alert
+## 提示框使用 Alert
 
 ```tsx
 <Alert>
@@ -65,7 +65,7 @@ This applies to all group-based components:
 
 ---
 
-## Empty states use Empty component
+## 空状态使用 Empty 组件
 
 ```tsx
 <Empty>
@@ -82,7 +82,7 @@ This applies to all group-based components:
 
 ---
 
-## Toast notifications use sonner
+## Toast 通知使用 sonner
 
 ```tsx
 import { toast } from "sonner"
@@ -96,22 +96,22 @@ toast("File deleted.", {
 
 ---
 
-## Choosing between overlay components
+## 覆盖层组件之间如何选择
 
-| Use case | Component |
-|----------|-----------|
-| Focused task that requires input | `Dialog` |
-| Destructive action confirmation | `AlertDialog` |
-| Side panel with details or filters | `Sheet` |
-| Mobile-first bottom panel | `Drawer` |
-| Quick info on hover | `HoverCard` |
-| Small contextual content on click | `Popover` |
+| 使用场景 | 组件 |
+|----------|------|
+| 需要输入的聚焦任务 | `Dialog` |
+| 破坏性操作的确认 | `AlertDialog` |
+| 带详情或筛选的侧边面板 | `Sheet` |
+| 移动端优先的底部面板 | `Drawer` |
+| 悬停时的快速信息 | `HoverCard` |
+| 点击时的小型上下文内容 | `Popover` |
 
 ---
 
-## Dialog, Sheet, and Drawer always need a Title
+## Dialog、Sheet 和 Drawer 始终需要 Title
 
-`DialogTitle`, `SheetTitle`, `DrawerTitle` are required for accessibility. Use `className="sr-only"` if visually hidden.
+出于可访问性要求，`DialogTitle`、`SheetTitle`、`DrawerTitle` 是必需的。视觉上隐藏时使用 `className="sr-only"`。
 
 ```tsx
 <DialogContent>
@@ -125,9 +125,9 @@ toast("File deleted.", {
 
 ---
 
-## Card structure
+## Card 结构
 
-Use full composition — don't dump everything into `CardContent`:
+使用完整的组合 —— 不要把所有内容都塞进 `CardContent`：
 
 ```tsx
 <Card>
@@ -144,9 +144,9 @@ Use full composition — don't dump everything into `CardContent`:
 
 ---
 
-## Button has no isPending or isLoading prop
+## Button 没有 isPending 或 isLoading 属性
 
-Compose with `Spinner` + `data-icon` + `disabled`:
+用 `Spinner` + `data-icon` + `disabled` 组合实现：
 
 ```tsx
 <Button disabled>
@@ -157,9 +157,9 @@ Compose with `Spinner` + `data-icon` + `disabled`:
 
 ---
 
-## TabsTrigger must be inside TabsList
+## TabsTrigger 必须在 TabsList 内
 
-Never render `TabsTrigger` directly inside `Tabs` — always wrap in `TabsList`:
+切勿直接在 `Tabs` 中渲染 `TabsTrigger` —— 始终用 `TabsList` 包裹：
 
 ```tsx
 <Tabs defaultValue="account">
@@ -173,9 +173,9 @@ Never render `TabsTrigger` directly inside `Tabs` — always wrap in `TabsList`:
 
 ---
 
-## Avatar always needs AvatarFallback
+## Avatar 始终需要 AvatarFallback
 
-Always include `AvatarFallback` for when the image fails to load:
+始终包含 `AvatarFallback`，用于图片加载失败时的回退：
 
 ```tsx
 <Avatar>
@@ -186,10 +186,10 @@ Always include `AvatarFallback` for when the image fails to load:
 
 ---
 
-## Use existing components instead of custom markup
+## 使用现有组件而非自定义标记
 
-| Instead of | Use |
+| 不要使用 | 改用 |
 |---|---|
-| `<hr>` or `<div className="border-t">` | `<Separator />` |
-| `<div className="animate-pulse">` with styled divs | `<Skeleton className="h-4 w-3/4" />` |
+| `<hr>` 或 `<div className="border-t">` | `<Separator />` |
+| 带样式 div 的 `<div className="animate-pulse">` | `<Skeleton className="h-4 w-3/4" />` |
 | `<span className="rounded-full bg-green-100 ...">` | `<Badge variant="secondary">` |

@@ -1,24 +1,24 @@
-# Styling & Customization
+# 样式与自定义
 
-See [customization.md](../customization.md) for theming, CSS variables, and adding custom colors.
+主题、CSS 变量和添加自定义颜色参见 [customization.md](../customization.md)。
 
-## Contents
+## 目录
 
-- Semantic colors
-- Built-in variants first
-- className for layout only
-- No space-x-* / space-y-*
-- Prefer size-* over w-* h-* when equal
-- Prefer truncate shorthand
-- No manual dark: color overrides
-- Use cn() for conditional classes
-- No manual z-index on overlay components
+- 语义化颜色
+- 优先使用内置变体
+- className 仅用于布局
+- 不使用 space-x-* / space-y-*
+- 宽高相等时优先使用 size-* 而非 w-* h-*
+- 优先使用 truncate 简写
+- 不手动覆盖 dark: 颜色
+- 使用 cn() 处理条件类
+- 覆盖层组件不手动设置 z-index
 
 ---
 
-## Semantic colors
+## 语义化颜色
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <div className="bg-blue-500 text-white">
@@ -26,7 +26,7 @@ See [customization.md](../customization.md) for theming, CSS variables, and addi
 </div>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <div className="bg-primary text-primary-foreground">
@@ -36,11 +36,11 @@ See [customization.md](../customization.md) for theming, CSS variables, and addi
 
 ---
 
-## No raw color values for status/state indicators
+## 状态/状态指示器不使用原始颜色值
 
-For positive, negative, or status indicators, use Badge variants, semantic tokens like `text-destructive`, or define custom CSS variables — don't reach for raw Tailwind colors.
+对于正面、负面或状态指示，使用 Badge 变体、`text-destructive` 等语义化令牌，或定义自定义 CSS 变量 —— 不要直接使用原始 Tailwind 颜色。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <span className="text-emerald-600">+20.1%</span>
@@ -48,7 +48,7 @@ For positive, negative, or status indicators, use Badge variants, semantic token
 <span className="text-red-600">-3.2%</span>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <Badge variant="secondary">+20.1%</Badge>
@@ -56,13 +56,13 @@ For positive, negative, or status indicators, use Badge variants, semantic token
 <span className="text-destructive">-3.2%</span>
 ```
 
-If you need a success/positive color that doesn't exist as a semantic token, use a Badge variant or ask the user about adding a custom CSS variable to the theme (see [customization.md](../customization.md)).
+如果你需要一个语义化令牌中不存在的成功/正面颜色，使用 Badge 变体，或询问用户是否在主题中添加自定义 CSS 变量（参见 [customization.md](../customization.md)）。
 
 ---
 
-## Built-in variants first
+## 优先使用内置变体
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <Button className="border border-input bg-transparent hover:bg-accent">
@@ -70,7 +70,7 @@ If you need a success/positive color that doesn't exist as a semantic token, use
 </Button>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <Button variant="outline">Click me</Button>
@@ -78,11 +78,11 @@ If you need a success/positive color that doesn't exist as a semantic token, use
 
 ---
 
-## className for layout only
+## className 仅用于布局
 
-Use `className` for layout (e.g. `max-w-md`, `mx-auto`, `mt-4`), **not** for overriding component colors or typography. To change colors, use semantic tokens, built-in variants, or CSS variables.
+`className` 用于布局（例如 `max-w-md`、`mx-auto`、`mt-4`），**不要**用于覆盖组件的颜色或排版。要修改颜色，请使用语义化令牌、内置变体或 CSS 变量。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <Card className="bg-blue-100 text-blue-900 font-bold">
@@ -90,7 +90,7 @@ Use `className` for layout (e.g. `max-w-md`, `mx-auto`, `mt-4`), **not** for ove
 </Card>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <Card className="max-w-md mx-auto">
@@ -98,16 +98,16 @@ Use `className` for layout (e.g. `max-w-md`, `mx-auto`, `mt-4`), **not** for ove
 </Card>
 ```
 
-To customize a component's appearance, prefer these approaches in order:
-1. **Built-in variants** — `variant="outline"`, `variant="destructive"`, etc.
-2. **Semantic color tokens** — `bg-primary`, `text-muted-foreground`.
-3. **CSS variables** — define custom colors in the global CSS file (see [customization.md](../customization.md)).
+自定义组件外观时，按以下顺序优先使用：
+1. **内置变体** — `variant="outline"`、`variant="destructive"` 等
+2. **语义化颜色令牌** — `bg-primary`、`text-muted-foreground`
+3. **CSS 变量** — 在全局 CSS 文件中定义自定义颜色（参见 [customization.md](../customization.md)）
 
 ---
 
-## No space-x-* / space-y-*
+## 不使用 space-x-* / space-y-*
 
-Use `gap-*` instead. `space-y-4` → `flex flex-col gap-4`. `space-x-2` → `flex gap-2`.
+改用 `gap-*`。`space-y-4` → `flex flex-col gap-4`。`space-x-2` → `flex gap-2`。
 
 ```tsx
 <div className="flex flex-col gap-4">
@@ -119,35 +119,35 @@ Use `gap-*` instead. `space-y-4` → `flex flex-col gap-4`. `space-x-2` → `fle
 
 ---
 
-## Prefer size-* over w-* h-* when equal
+## 宽高相等时优先使用 size-* 而非 w-* h-*
 
-`size-10` not `w-10 h-10`. Applies to icons, avatars, skeletons, etc.
-
----
-
-## Prefer truncate shorthand
-
-`truncate` not `overflow-hidden text-ellipsis whitespace-nowrap`.
+使用 `size-10` 而非 `w-10 h-10`。适用于图标、头像、骨架屏等。
 
 ---
 
-## No manual dark: color overrides
+## 优先使用 truncate 简写
 
-Use semantic tokens — they handle light/dark via CSS variables. `bg-background text-foreground` not `bg-white dark:bg-gray-950`.
+使用 `truncate` 而非 `overflow-hidden text-ellipsis whitespace-nowrap`。
 
 ---
 
-## Use cn() for conditional classes
+## 不手动覆盖 dark: 颜色
 
-Use the `cn()` utility from the project for conditional or merged class names. Don't write manual ternaries in className strings.
+使用语义化令牌 —— 它们通过 CSS 变量自动处理浅色/深色。使用 `bg-background text-foreground` 而非 `bg-white dark:bg-gray-950`。
 
-**Incorrect:**
+---
+
+## 使用 cn() 处理条件类
+
+使用项目中的 `cn()` 工具处理条件或合并的类名。不要在 className 字符串中手写三元表达式。
+
+**错误做法：**
 
 ```tsx
 <div className={`flex items-center ${isActive ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 import { cn } from "@/lib/utils"
@@ -157,6 +157,6 @@ import { cn } from "@/lib/utils"
 
 ---
 
-## No manual z-index on overlay components
+## 覆盖层组件不手动设置 z-index
 
-`Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `DropdownMenu`, `Popover`, `Tooltip`, `HoverCard` handle their own stacking. Never add `z-50` or `z-[999]`.
+`Dialog`、`Sheet`、`Drawer`、`AlertDialog`、`DropdownMenu`、`Popover`、`Tooltip`、`HoverCard` 自行处理层叠顺序。切勿添加 `z-50` 或 `z-[999]`。

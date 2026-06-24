@@ -1,23 +1,23 @@
-# Base vs Radix
+# Base 与 Radix 对比
 
-API differences between `base` and `radix`. Check the `base` field from `npx shadcn@latest info`.
+`base` 和 `radix` 之间的 API 差异。通过 `npx shadcn@latest info` 检查 `base` 字段。
 
-## Contents
+## 目录
 
-- Composition: asChild vs render
-- Button / trigger as non-button element
-- Select (items prop, placeholder, positioning, multiple, object values)
-- ToggleGroup (type vs multiple)
-- Slider (scalar vs array)
-- Accordion (type and defaultValue)
+- 组合：asChild vs render
+- Button/触发器作为非 button 元素
+- Select（items 属性、占位符、定位、多选、对象值）
+- ToggleGroup（type vs multiple）
+- Slider（标量 vs 数组）
+- Accordion（type 和 defaultValue）
 
 ---
 
-## Composition: asChild (radix) vs render (base)
+## 组合：asChild（radix）vs render（base）
 
-Radix uses `asChild` to replace the default element. Base uses `render`. Don't wrap triggers in extra elements.
+Radix 使用 `asChild` 替换默认元素。Base 使用 `render`。不要把触发器包裹在额外的元素中。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <DialogTrigger>
@@ -27,7 +27,7 @@ Radix uses `asChild` to replace the default element. Base uses `render`. Don't w
 </DialogTrigger>
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
 <DialogTrigger asChild>
@@ -35,27 +35,27 @@ Radix uses `asChild` to replace the default element. Base uses `render`. Don't w
 </DialogTrigger>
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
 <DialogTrigger render={<Button />}>Open</DialogTrigger>
 ```
 
-This applies to all trigger and close components: `DialogTrigger`, `SheetTrigger`, `AlertDialogTrigger`, `DropdownMenuTrigger`, `PopoverTrigger`, `TooltipTrigger`, `CollapsibleTrigger`, `DialogClose`, `SheetClose`, `NavigationMenuLink`, `BreadcrumbLink`, `SidebarMenuButton`, `Badge`, `Item`.
+这适用于所有触发器和关闭组件：`DialogTrigger`、`SheetTrigger`、`AlertDialogTrigger`、`DropdownMenuTrigger`、`PopoverTrigger`、`TooltipTrigger`、`CollapsibleTrigger`、`DialogClose`、`SheetClose`、`NavigationMenuLink`、`BreadcrumbLink`、`SidebarMenuButton`、`Badge`、`Item`。
 
 ---
 
-## Button / trigger as non-button element (base only)
+## Button/触发器作为非 button 元素（仅 base）
 
-When `render` changes an element to a non-button (`<a>`, `<span>`), add `nativeButton={false}`.
+当 `render` 将元素改为非 button（`<a>`、`<span>`）时，需要添加 `nativeButton={false}`。
 
-**Incorrect (base):** missing `nativeButton={false}`.
+**错误做法（base）：** 缺少 `nativeButton={false}`。
 
 ```tsx
 <Button render={<a href="/docs" />}>Read the docs</Button>
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
 <Button render={<a href="/docs" />} nativeButton={false}>
@@ -63,7 +63,7 @@ When `render` changes an element to a non-button (`<a>`, `<span>`), add `nativeB
 </Button>
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
 <Button asChild>
@@ -71,10 +71,10 @@ When `render` changes an element to a non-button (`<a>`, `<span>`), add `nativeB
 </Button>
 ```
 
-Same for triggers whose `render` is not a `Button`:
+`render` 为非 `Button` 的触发器同理：
 
 ```tsx
-// base.
+// base。
 <PopoverTrigger render={<InputGroupAddon />} nativeButton={false}>
   Pick date
 </PopoverTrigger>
@@ -84,9 +84,9 @@ Same for triggers whose `render` is not a `Button`:
 
 ## Select
 
-**items prop (base only).** Base requires an `items` prop on the root. Radix uses inline JSX only.
+**items 属性（仅 base）。** Base 要求在根元素上传入 `items` 属性。Radix 仅使用内联 JSX。
 
-**Incorrect (base):**
+**错误做法（base）：**
 
 ```tsx
 <Select>
@@ -94,7 +94,7 @@ Same for triggers whose `render` is not a `Button`:
 </Select>
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
 const items = [
@@ -117,7 +117,7 @@ const items = [
 </Select>
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
 <Select>
@@ -133,25 +133,25 @@ const items = [
 </Select>
 ```
 
-**Placeholder.** Base uses a `{ value: null }` item in the items array. Radix uses `<SelectValue placeholder="...">`.
+**占位符。** Base 在 items 数组中使用 `{ value: null }` 项。Radix 使用 `<SelectValue placeholder="...">`。
 
-**Content positioning.** Base uses `alignItemWithTrigger`. Radix uses `position`.
+**内容定位。** Base 使用 `alignItemWithTrigger`。Radix 使用 `position`。
 
 ```tsx
-// base.
+// base。
 <SelectContent alignItemWithTrigger={false} side="bottom">
 
-// radix.
+// radix。
 <SelectContent position="popper">
 ```
 
 ---
 
-## Select — multiple selection and object values (base only)
+## Select —— 多选和对象值（仅 base）
 
-Base supports `multiple`, render-function children on `SelectValue`, and object values with `itemToStringValue`. Radix is single-select with string values only.
+Base 支持 `multiple`、`SelectValue` 上的渲染函数子组件，以及通过 `itemToStringValue` 处理的对象值。Radix 仅支持单选且仅限字符串值。
 
-**Correct (base — multiple selection):**
+**正确做法（base —— 多选）：**
 
 ```tsx
 <Select items={items} multiple defaultValue={[]}>
@@ -164,7 +164,7 @@ Base supports `multiple`, render-function children on `SelectValue`, and object 
 </Select>
 ```
 
-**Correct (base — object values):**
+**正确做法（base —— 对象值）：**
 
 ```tsx
 <Select defaultValue={plans[0]} itemToStringValue={(plan) => plan.name}>
@@ -179,9 +179,9 @@ Base supports `multiple`, render-function children on `SelectValue`, and object 
 
 ## ToggleGroup
 
-Base uses a `multiple` boolean prop. Radix uses `type="single"` or `type="multiple"`.
+Base 使用 `multiple` 布尔属性。Radix 使用 `type="single"` 或 `type="multiple"`。
 
-**Incorrect (base):**
+**错误做法（base）：**
 
 ```tsx
 <ToggleGroup type="single" defaultValue="daily">
@@ -189,46 +189,46 @@ Base uses a `multiple` boolean prop. Radix uses `type="single"` or `type="multip
 </ToggleGroup>
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
-// Single (no prop needed), defaultValue is always an array.
+// 单选（无需 type 属性），defaultValue 始终是数组。
 <ToggleGroup defaultValue={["daily"]} spacing={2}>
   <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
   <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
 </ToggleGroup>
 
-// Multi-selection.
+// 多选。
 <ToggleGroup multiple>
   <ToggleGroupItem value="bold">Bold</ToggleGroupItem>
   <ToggleGroupItem value="italic">Italic</ToggleGroupItem>
 </ToggleGroup>
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
-// Single, defaultValue is a string.
+// 单选，defaultValue 是字符串。
 <ToggleGroup type="single" defaultValue="daily" spacing={2}>
   <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
   <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
 </ToggleGroup>
 
-// Multi-selection.
+// 多选。
 <ToggleGroup type="multiple">
   <ToggleGroupItem value="bold">Bold</ToggleGroupItem>
   <ToggleGroupItem value="italic">Italic</ToggleGroupItem>
 </ToggleGroup>
 ```
 
-**Controlled single value:**
+**受控的单选值：**
 
 ```tsx
-// base — wrap/unwrap arrays.
+// base —— 数组包装/解包。
 const [value, setValue] = React.useState("normal")
 <ToggleGroup value={[value]} onValueChange={(v) => setValue(v[0])}>
 
-// radix — plain string.
+// radix —— 普通字符串。
 const [value, setValue] = React.useState("normal")
 <ToggleGroup type="single" value={value} onValueChange={setValue}>
 ```
@@ -237,34 +237,34 @@ const [value, setValue] = React.useState("normal")
 
 ## Slider
 
-Base accepts a plain number for a single thumb. Radix always requires an array.
+Base 对单个滑块接受普通数字。Radix 始终要求数组。
 
-**Incorrect (base):**
+**错误做法（base）：**
 
 ```tsx
 <Slider defaultValue={[50]} max={100} step={1} />
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
 <Slider defaultValue={50} max={100} step={1} />
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
 <Slider defaultValue={[50]} max={100} step={1} />
 ```
 
-Both use arrays for range sliders. Controlled `onValueChange` in base may need a cast:
+范围滑块两者都使用数组。Base 中的受控 `onValueChange` 可能需要类型转换：
 
 ```tsx
-// base.
+// base。
 const [value, setValue] = React.useState([0.3, 0.7])
 <Slider value={value} onValueChange={(v) => setValue(v as number[])} />
 
-// radix.
+// radix。
 const [value, setValue] = React.useState([0.3, 0.7])
 <Slider value={value} onValueChange={setValue} />
 ```
@@ -273,9 +273,9 @@ const [value, setValue] = React.useState([0.3, 0.7])
 
 ## Accordion
 
-Radix requires `type="single"` or `type="multiple"` and supports `collapsible`. `defaultValue` is a string. Base uses no `type` prop, uses `multiple` boolean, and `defaultValue` is always an array.
+Radix 要求 `type="single"` 或 `type="multiple"`，并支持 `collapsible`。`defaultValue` 是字符串。Base 不使用 `type` 属性，使用 `multiple` 布尔属性，且 `defaultValue` 始终是数组。
 
-**Incorrect (base):**
+**错误做法（base）：**
 
 ```tsx
 <Accordion type="single" collapsible defaultValue="item-1">
@@ -283,21 +283,21 @@ Radix requires `type="single"` or `type="multiple"` and supports `collapsible`. 
 </Accordion>
 ```
 
-**Correct (base):**
+**正确做法（base）：**
 
 ```tsx
 <Accordion defaultValue={["item-1"]}>
   <AccordionItem value="item-1">...</AccordionItem>
 </Accordion>
 
-// Multi-select.
+// 多选。
 <Accordion multiple defaultValue={["item-1", "item-2"]}>
   <AccordionItem value="item-1">...</AccordionItem>
   <AccordionItem value="item-2">...</AccordionItem>
 </Accordion>
 ```
 
-**Correct (radix):**
+**正确做法（radix）：**
 
 ```tsx
 <Accordion type="single" collapsible defaultValue="item-1">

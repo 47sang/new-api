@@ -1,14 +1,14 @@
-# Icons
+# 图标
 
-**Always use the project's configured `iconLibrary` for imports.** Check the `iconLibrary` field from project context: `lucide` → `lucide-react`, `tabler` → `@tabler/icons-react`, etc. Never assume `lucide-react`.
+**始终使用项目配置的 `iconLibrary` 进行导入。** 通过项目上下文检查 `iconLibrary` 字段：`lucide` → `lucide-react`，`tabler` → `@tabler/icons-react` 等。切勿假设为 `lucide-react`。
 
 ---
 
-## Icons in Button use data-icon attribute
+## Button 内的图标使用 data-icon 属性
 
-Add `data-icon="inline-start"` (prefix) or `data-icon="inline-end"` (suffix) to the icon. No sizing classes on the icon.
+为图标添加 `data-icon="inline-start"`（前缀）或 `data-icon="inline-end"`（后缀）。图标上不要加尺寸类。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <Button>
@@ -17,7 +17,7 @@ Add `data-icon="inline-start"` (prefix) or `data-icon="inline-end"` (suffix) to 
 </Button>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <Button>
@@ -33,11 +33,11 @@ Add `data-icon="inline-start"` (prefix) or `data-icon="inline-end"` (suffix) to 
 
 ---
 
-## No sizing classes on icons inside components
+## 组件内的图标不加尺寸类
 
-Components handle icon sizing via CSS. Don't add `size-4`, `w-4 h-4`, or other sizing classes to icons inside `Button`, `DropdownMenuItem`, `Alert`, `Sidebar*`, or other shadcn components. Unless the user explicitly asks for custom icon sizes.
+组件通过 CSS 处理图标尺寸。不要给 `Button`、`DropdownMenuItem`、`Alert`、`Sidebar*` 或其他 shadcn 组件内的图标添加 `size-4`、`w-4 h-4` 或其他尺寸类。除非用户明确要求自定义图标尺寸。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <Button>
@@ -51,7 +51,7 @@ Components handle icon sizing via CSS. Don't add `size-4`, `w-4 h-4`, or other s
 </DropdownMenuItem>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 <Button>
@@ -67,11 +67,11 @@ Components handle icon sizing via CSS. Don't add `size-4`, `w-4 h-4`, or other s
 
 ---
 
-## Pass icons as component objects, not string keys
+## 以组件对象形式传递图标，而非字符串键
 
-Use `icon={CheckIcon}`, not a string key to a lookup map.
+使用 `icon={CheckIcon}`，而非通过字符串键查找映射表。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 const iconMap = {
@@ -87,10 +87,10 @@ function StatusBadge({ icon }: { icon: string }) {
 <StatusBadge icon="check" />
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
-// Import from the project's configured iconLibrary (e.g. lucide-react, @tabler/icons-react).
+// 从项目配置的 iconLibrary 导入（如 lucide-react、@tabler/icons-react）。
 import { CheckIcon } from "lucide-react"
 
 function StatusBadge({ icon: Icon }: { icon: React.ComponentType }) {

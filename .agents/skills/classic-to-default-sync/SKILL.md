@@ -1,83 +1,83 @@
 ---
 name: classic-to-default-sync
-description: Inspect a given commit's web/classic changes and sync all features/fixes to web/default. Use when the user provides a commit ID and wants to audit whether web/default already has the same features as web/classic, port missing features, improve suboptimal implementations, fix bugs, and remove redundant code. Trigger phrases include: "/classic-to-default-sync <hash>", "classic-to-default-sync <hash>", "sync classic to default", "port from classic", "compare classic commit", "classic 和 default 对比", "把这次 classic 的修改同步到 default", "查看这次提交 classic 中的修改并同步", or any request supplying a commit hash together with classic/default comparison intent.
+description: 检查指定提交中 web/classic 的变更，并将所有功能/修复同步到 web/default。当用户提供提交 ID 并希望审计 web/default 是否已具备与 web/classic 相同的功能、移植缺失功能、改进次优实现、修复错误以及删除冗余代码时使用。触发短语包括："classic-to-default-sync <hash>"、"/classic-to-default-sync <hash>"、"sync classic to default"、"port from classic"、"compare classic commit"、"classic 和 default 对比"、"把这次 classic 的修改同步到 default"、"查看这次提交 classic 中的修改并同步"，或任何提供提交哈希并附带 classic/default 对比意图的请求。
 ---
 
-# Classic-to-Default Sync
+# Classic-to-Default Sync（经典版同步至默认版）
 
-Given a **commit ID**, audit all `web/classic` changes and ensure `web/default` reaches feature parity with the best possible implementation.
+给定一个 **提交 ID**，审计所有 `web/classic` 的变更，并确保 `web/default` 以尽可能最优的实现达到功能对等。
 
-## Input
+## 输入
 
-The user must supply a `<commit-id>`.
+用户必须提供一个 `<commit-id>`。
 
-## Workflow
+## 工作流程
 
-### Step 1 — Extract classic diff
+### 第一步 — 提取 classic 的 diff
 
 ```bash
 git show <commit-id> -- web/classic
 ```
 
-Read every changed file in `web/classic`. Identify the **logical changes** (new features, UI/UX improvements, bug fixes, config tweaks, removed dead code, etc.) — not just line diffs.
+通读 `web/classic` 中所有变更的文件。识别**逻辑变更**（新功能、界面/体验改进、错误修复、配置调整、已删除的冗余代码等），而不仅仅是行级别的差异。
 
-### Step 2 — Map to default counterparts
+### 第二步 — 映射到 default 的对应文件
 
-For each logical change found in Step 1, locate the equivalent file(s) in `web/default/src/`. Use Glob/Grep/SemanticSearch as needed. Consider that:
+对于第一步中发现的每一个逻辑变更，在 `web/default/src/` 中定位对应的文件。根据需要灵活使用全局搜索、正则搜索或语义搜索。注意：
 
-- `web/classic` uses **React 18 + Vite + Semi Design**
-- `web/default` uses **React 19 + Rsbuild + Base UI + Tailwind CSS**
-- Component names, file paths, and API shapes may differ; match by **functionality**, not filename.
+- `web/classic` 使用 **React 18 + Vite + Semi Design**
+- `web/default` 使用 **React 19 + Rsbuild + Base UI + Tailwind CSS**
+- 组件名称、文件路径和 API 形态可能不同；按**功能**匹配，而非按文件名匹配。
 
-### Step 3 — Triage each change
+### 第三步 — 分类每个变更
 
-Classify every logical change as one of:
+将每个逻辑变更归入以下类别之一：
 
-| Status | Meaning |
-|--------|---------|
-| ✅ Already present & optimal | No action needed |
-| ⚠️ Present but suboptimal | Improve: logic, layout, style, or code quality |
-| ❌ Missing | Implement from scratch in default's stack |
+| 状态 | 含义 |
+|------|------|
+| ✅ 已存在且实现最优 | 无需操作 |
+| ⚠️ 已存在但实现次优 | 改进：逻辑、布局、样式或代码质量 |
+| ❌ 缺失 | 在 default 的栈中从零实现 |
 
-### Step 4 — Implement
+### 第四步 — 实施
 
-For each **⚠️** or **❌** item:
+对于每个 ⚠️ 或 ❌ 项：
 
-1. **Read the target file(s) in `web/default`** before editing (required by project conventions).
-2. Implement using `web/default` conventions:
-   - React 19 patterns (hooks, Suspense, etc.)
-   - Base UI primitives where applicable
-   - Tailwind CSS for styling (no inline styles or Semi Design imports)
-   - `useTranslation()` + `t('English key')` for all user-visible strings
-   - TypeScript — explicit types, no `any`
-   - No dead code, no redundant comments
-3. Follow **Rule 6** (pointer types for optional relay DTOs) if touching relay-related TS types.
-4. After editing, run `ReadLints` on changed files and fix any introduced lint errors.
+1. 编辑前**先读取 `web/default` 中的目标文件**（项目约定要求）。
+2. 遵循 `web/default` 的约定实现：
+   - React 19 模式（hooks、Suspense 等）
+   - 尽可能使用 Base UI 基础组件
+   - 使用 Tailwind CSS 编写样式（不使用内联样式或 Semi Design 导入）
+   - 所有面向用户的字符串使用 `useTranslation()` + `t('英文键名')`
+   - TypeScript — 显式类型，不使用 `any`
+   - 无冗余代码，无多余注释
+3. 如果涉及 relay 相关的 TypeScript 类型，遵循 **规则 6**（可选 relay DTO 使用指针类型）。
+4. 编辑完成后，对变更的文件运行 `ReadLints` 并修复引入的 lint 错误。
 
-### Step 5 — i18n
+### 第五步 — 国际化
 
-If any new user-visible strings were added, run the i18n sync:
+如果添加了任何新的面向用户的字符串，运行国际化同步：
 
 ```bash
 cd web/default && bun run i18n:sync
 ```
 
-Then add missing translations for all supported locales (en, zh, fr, ja, ru, vi) following the **i18n-translate** skill.
+然后按照 **i18n-translate** 技能，为所有支持的语言（en、zh、fr、ja、ru、vi）补充缺失的翻译。
 
-### Step 6 — Report
+### 第六步 — 报告
 
-Summarise the work in a concise table:
+以简洁的表格总结工作：
 
-| # | Change (from classic commit) | Status | Action taken |
-|---|------------------------------|--------|--------------|
-| 1 | … | ✅ / ⚠️ / ❌ | None / Improved / Implemented |
+| # | 变更（来自 classic 提交） | 状态 | 采取的操作 |
+|---|--------------------------|------|------------|
+| 1 | … | ✅ / ⚠️ / ❌ | 无 / 已改进 / 已实现 |
 
-If every item is ✅ with no action needed, simply reply: **"已完成 — web/default 已具备此次提交的所有功能，且实现质量良好，无需修改。"**
+如果所有项均为 ✅ 且无需操作，直接回复：**"已完成 — web/default 已具备此次提交的所有功能，且实现质量良好，无需修改。"**
 
-## Quality bar
+## 质量标准
 
-- No unused imports, variables, or components
-- No commented-out code left behind
-- Consistent naming with surrounding `web/default` code
-- All interactive elements accessible (keyboard nav, ARIA labels where Radix doesn't provide them automatically)
-- No regressions: existing behaviour in `web/default` must not break
+- 无未使用的导入、变量或组件
+- 无遗留的被注释掉的代码
+- 命名与周围 `web/default` 代码保持一致
+- 所有交互元素可访问（键盘导航、Radix 未自动提供的 ARIA 标签）
+- 无回归：`web/default` 中的现有行为不得被破坏

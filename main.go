@@ -154,6 +154,11 @@ func main() {
 		common.SysLog("pprof enabled")
 	}
 
+	// 定期清理过期的请求/响应日志
+	if common.RequestResponseLogEnabled && common.RequestResponseLogRetentionDays > 0 {
+		go model.StartRequestResponseLogCleanup(common.RequestResponseLogRetentionDays)
+	}
+
 	err = common.StartPyroScope()
 	if err != nil {
 		common.SysError(fmt.Sprintf("start pyroscope error : %v", err))

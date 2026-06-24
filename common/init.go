@@ -84,6 +84,8 @@ func InitEnv() {
 	IsMasterNode = os.Getenv("NODE_TYPE") != "slave"
 	initNodeNameIdentity()
 	TLSInsecureSkipVerify = GetEnvOrDefaultBool("TLS_INSECURE_SKIP_VERIFY", false)
+	RequestResponseLogEnabled = GetEnvOrDefaultBool("REQUEST_RESPONSE_LOG_ENABLED", false)
+	RequestResponseLogRetentionDays = GetEnvOrDefault("REQUEST_RESPONSE_LOG_RETENTION_DAYS", 7)
 	if TLSInsecureSkipVerify {
 		if tr, ok := http.DefaultTransport.(*http.Transport); ok && tr != nil {
 			if tr.TLSClientConfig != nil {

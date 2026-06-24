@@ -1,19 +1,19 @@
-# Forms & Inputs
+# 表单与输入控件
 
-## Contents
+## 目录
 
-- Forms use FieldGroup + Field
-- InputGroup requires InputGroupInput/InputGroupTextarea
-- Buttons inside inputs use InputGroup + InputGroupAddon
-- Option sets (2–7 choices) use ToggleGroup
-- FieldSet + FieldLegend for grouping related fields
-- Field validation and disabled states
+- 表单使用 FieldGroup + Field
+- InputGroup 需要 InputGroupInput/InputGroupTextarea
+- 输入框内的按钮使用 InputGroup + InputGroupAddon
+- 选项组（2–7 个选项）使用 ToggleGroup
+- 使用 FieldSet + FieldLegend 分组相关字段
+- 字段校验与禁用状态
 
 ---
 
-## Forms use FieldGroup + Field
+## 表单使用 FieldGroup + Field
 
-Always use `FieldGroup` + `Field` — never raw `div` with `space-y-*`:
+始终使用 `FieldGroup` + `Field` —— 永远不要使用带 `space-y-*` 的原始 `div`：
 
 ```tsx
 <FieldGroup>
@@ -28,27 +28,27 @@ Always use `FieldGroup` + `Field` — never raw `div` with `space-y-*`:
 </FieldGroup>
 ```
 
-Use `Field orientation="horizontal"` for settings pages. Use `FieldLabel className="sr-only"` for visually hidden labels.
+设置页面使用 `Field orientation="horizontal"`。视觉上隐藏的标签使用 `FieldLabel className="sr-only"`。
 
-**Choosing form controls:**
+**选择表单控件：**
 
-- Simple text input → `Input`
-- Dropdown with predefined options → `Select`
-- Searchable dropdown → `Combobox`
-- Native HTML select (no JS) → `native-select`
-- Boolean toggle → `Switch` (for settings) or `Checkbox` (for forms)
-- Single choice from few options → `RadioGroup`
-- Toggle between 2–5 options → `ToggleGroup` + `ToggleGroupItem`
-- OTP/verification code → `InputOTP`
-- Multi-line text → `Textarea`
+- 简单文本输入 → `Input`
+- 预定义选项的下拉 → `Select`
+- 可搜索的下拉 → `Combobox`
+- 原生 HTML select（无 JS）→ `native-select`
+- 布尔值开关 → `Switch`（用于设置）或 `Checkbox`（用于表单）
+- 少量选项中单选 → `RadioGroup`
+- 在 2–5 个选项间切换 → `ToggleGroup` + `ToggleGroupItem`
+- OTP/验证码 → `InputOTP`
+- 多行文本 → `Textarea`
 
 ---
 
-## InputGroup requires InputGroupInput/InputGroupTextarea
+## InputGroup 需要 InputGroupInput/InputGroupTextarea
 
-Never use raw `Input` or `Textarea` inside an `InputGroup`.
+切勿在 `InputGroup` 内使用原始的 `Input` 或 `Textarea`。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <InputGroup>
@@ -56,7 +56,7 @@ Never use raw `Input` or `Textarea` inside an `InputGroup`.
 </InputGroup>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 import { InputGroup, InputGroupInput } from "@/components/ui/input-group"
@@ -68,11 +68,11 @@ import { InputGroup, InputGroupInput } from "@/components/ui/input-group"
 
 ---
 
-## Buttons inside inputs use InputGroup + InputGroupAddon
+## 输入框内的按钮使用 InputGroup + InputGroupAddon
 
-Never place a `Button` directly inside or adjacent to an `Input` with custom positioning.
+切勿将 `Button` 直接放在 `Input` 内部或旁边并使用自定义定位。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 <div className="relative">
@@ -83,7 +83,7 @@ Never place a `Button` directly inside or adjacent to an `Input` with custom pos
 </div>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 import { InputGroup, InputGroupInput, InputGroupAddon } from "@/components/ui/input-group"
@@ -100,11 +100,11 @@ import { InputGroup, InputGroupInput, InputGroupAddon } from "@/components/ui/in
 
 ---
 
-## Option sets (2–7 choices) use ToggleGroup
+## 选项组（2–7 个选项）使用 ToggleGroup
 
-Don't manually loop `Button` components with active state.
+不要手动循环 `Button` 组件并维护激活状态。
 
-**Incorrect:**
+**错误做法：**
 
 ```tsx
 const [selected, setSelected] = useState("daily")
@@ -122,7 +122,7 @@ const [selected, setSelected] = useState("daily")
 </div>
 ```
 
-**Correct:**
+**正确做法：**
 
 ```tsx
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -134,7 +134,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 </ToggleGroup>
 ```
 
-Combine with `Field` for labelled toggle groups:
+与 `Field` 组合用于带标签的切换组：
 
 ```tsx
 <Field orientation="horizontal">
@@ -147,13 +147,13 @@ Combine with `Field` for labelled toggle groups:
 </Field>
 ```
 
-> **Note:** `defaultValue` and `type`/`multiple` props differ between base and radix. See [base-vs-radix.md](./base-vs-radix.md#togglegroup).
+> **注意：** `defaultValue` 和 `type`/`multiple` 属性在 base 和 radix 之间有所不同。参见 [base-vs-radix.md](./base-vs-radix.md#togglegroup)。
 
 ---
 
-## FieldSet + FieldLegend for grouping related fields
+## 使用 FieldSet + FieldLegend 分组相关字段
 
-Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — not `div` with a heading:
+对相关的复选框、单选框或开关使用 `FieldSet` + `FieldLegend` —— 而非带标题的 `div`：
 
 ```tsx
 <FieldSet>
@@ -170,23 +170,23 @@ Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — n
 
 ---
 
-## Field validation and disabled states
+## 字段校验与禁用状态
 
-Both attributes are needed — `data-invalid`/`data-disabled` styles the field (label, description), while `aria-invalid`/`disabled` styles the control.
+这两个属性都需要 —— `data-invalid`/`data-disabled` 用于为字段设置样式（标签、描述），而 `aria-invalid`/`disabled` 用于为控件设置样式。
 
 ```tsx
-// Invalid.
+// 无效。
 <Field data-invalid>
   <FieldLabel htmlFor="email">Email</FieldLabel>
   <Input id="email" aria-invalid />
   <FieldDescription>Invalid email address.</FieldDescription>
 </Field>
 
-// Disabled.
+// 禁用。
 <Field data-disabled>
   <FieldLabel htmlFor="email">Email</FieldLabel>
   <Input id="email" disabled />
 </Field>
 ```
 
-Works for all controls: `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroupItem`, `Switch`, `Slider`, `NativeSelect`, `InputOTP`.
+适用于所有控件：`Input`、`Textarea`、`Select`、`Checkbox`、`RadioGroupItem`、`Switch`、`Slider`、`NativeSelect`、`InputOTP`。

@@ -583,6 +583,16 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
+// GetLogById 根据日志 ID 获取单条日志记录
+func GetLogById(logId int) (*Log, error) {
+	var log Log
+	err := LOG_DB.First(&log, logId).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
 type Stat struct {
 	Quota int `json:"quota"`
 	Rpm   int `json:"rpm"`

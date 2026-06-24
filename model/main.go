@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -390,7 +391,25 @@ func migrateLOGDB() error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{})
+	if err := LOG_DB.AutoMigrate(&Log{}); err != nil {
+		return err
+	}
+	if err := LOG_DB.AutoMigrate(&RequestResponseLog{}); err != nil {
+		return err
+	}
+
+	// 启动时清理过期的请求/响应日志
+	if common.RequestResponseLogEnabled && common.RequestResponseLogRetentionDays > 0 {
+		common.SysLog("cleaning up expired request/response logs, retention days: " + strconv.Itoa(common.RequestResponseLogRetentionDays))
+		deleted, cleanupErr := CleanupOldRequestResponseLogs(common.RequestResponseLogRetentionDays)
+		if cleanupErr != nil {
+			common.SysError("failed to cleanup request/response logs: " + cleanupErr.Error())
+		} else if deleted > 0 {
+			common.SysLog("cleaned up " + strconv.FormatInt(deleted, 10) + " expired request/response log(s)")
+		}
+	}
+
+	return nil
 }
 
 func migrateClickHouseLogDB() error {

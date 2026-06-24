@@ -109,3 +109,6 @@ export const getAllTaskLogs = (params: GetTaskLogsParams) =>
 
 export const getUserTaskLogs = (params: GetTaskLogsParams) =>
   fetchLogs('/api/task', params, false)
+
+export const getRequestResponseByLogId = (logId: number) =>
+  api.get(`/api/log/${encodeURIComponent(logId)}/request-response`)

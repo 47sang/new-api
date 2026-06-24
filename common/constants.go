@@ -114,6 +114,9 @@ var MemoryCacheEnabled bool
 
 var LogConsumeEnabled = true
 
+var RequestResponseLogEnabled = false
+var RequestResponseLogRetentionDays = 7 // 0 = permanent
+
 var TLSInsecureSkipVerify bool
 var InsecureTLSConfig = &tls.Config{InsecureSkipVerify: true}
 

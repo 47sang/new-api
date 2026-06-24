@@ -1,105 +1,104 @@
 ---
 name: shadcn-ui
 description: >-
-  Give the assistant project-aware shadcn/ui context: components.json,
-  composition patterns, CLI, registries, theming, and MCP. Use when working on
-  web/default UI, shadcn components, or presets. Overview aligns with
-  https://ui.shadcn.com/docs/skills.md; full upstream skill text is vendored
-  under vendor/shadcn/.
+  为助手提供项目感知的 shadcn/ui 上下文：components.json、组合模式、CLI、
+  注册表、主题和 MCP。在操作 web/default UI、shadcn 组件或预设时使用。
+  概览内容与 https://ui.shadcn.com/docs/skills.md 对齐；
+  完整的上游技能文本托管在 vendor/shadcn/ 下。
 ---
 
-<!-- Canonical overview: https://ui.shadcn.com/docs/skills.md -->
+<!-- 官方概览来源：https://ui.shadcn.com/docs/skills.md -->
 
-# Skills (shadcn/ui)
+# 技能（shadcn/ui）
 
-Skills give AI assistants project-aware context about shadcn/ui. When used, the assistant knows how to find, install, compose, and customize components using the correct APIs and patterns for your project.
+技能为 AI 助手提供关于 shadcn/ui 的项目感知上下文。使用后，助手将了解如何使用适合你项目的正确 API 和模式来查找、安装、组合和自定义组件。
 
-For example, you can ask:
+例如，你可以这样要求：
 
-- _"Add a login form with email and password fields."_
-- _"Create a settings page with a form for updating profile information."_
-- _"Build a dashboard with a sidebar, stats cards, and a data table."_
-- _"Switch to --preset [CODE]"_
-- _"Can you add a hero from @tailark?"_
+- _"添加一个带邮箱和密码字段的登录表单。"_
+- _"创建一个设置页面，包含用于更新个人信息的表单。"_
+- _"构建一个带侧边栏、统计卡片和数据表格的仪表盘。"_
+- _"切换到 --preset [编码]"_
+- _"你能从 @tailark 添加一个 hero 区块吗？"_
 
-The skill reads your project's `components.json` and provides your framework, aliases, installed components, icon library, and base library so it can generate correct code on the first try.
+该技能会读取项目的 `components.json`，并提供你的框架、别名、已安装的组件、图标库和基础库信息，以便一次生成正确的代码。
 
 ---
 
-## Install (ecosystem vs this repo)
+## 安装（官方生态 vs 本仓库）
 
-Official install from [Skills — shadcn/ui](https://ui.shadcn.com/docs/skills.md):
+官方安装方式参考 [Skills — shadcn/ui](https://ui.shadcn.com/docs/skills.md)：
 
 ```bash
 npx skills add shadcn/ui
 ```
 
-That installs the skill where the `skills` CLI is available. **This repository** keeps the same intent under `.agents/skills/shadcn-ui/` (overview here + **vendored** upstream docs in [`vendor/shadcn/`](./vendor/shadcn/)) and runs the shadcn CLI from the frontend app root:
+上述命令在 `skills` CLI 可用的位置安装技能。**本仓库** 将相同意图保存在 `.agents/skills/shadcn-ui/` 下（此处为概览 + ** vendored ** 上游文档见 [`vendor/shadcn/`](./vendor/shadcn/)），并从前端应用根目录运行 shadcn CLI：
 
 ```bash
 cd web/default && bunx shadcn@latest info --json
 ```
 
-Learn more about skills at [skills.sh](https://skills.sh).
+了解更多关于技能的信息，请访问 [skills.sh](https://skills.sh)。
 
 ---
 
-## What's included (and where)
+## 包含内容（及位置）
 
-### Project context
+### 项目上下文
 
-Run **`shadcn info --json`** (here: `cd web/default && bunx shadcn@latest info --json`) for framework, Tailwind version, aliases, base (`radix` | `base`), icon library, installed components, and resolved paths.
+运行 **`shadcn info --json`**（本项目：`cd web/default && bunx shadcn@latest info --json`）获取框架、Tailwind 版本、别名、基础库（`radix` | `base`）、图标库、已安装的组件和解析后的路径。
 
-### CLI commands
+### CLI 命令
 
-Full command reference (vendored): [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md).
+完整命令参考（ vendored ）：[`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md)。
 
-### Theming and customization
+### 主题与自定义
 
-Vendored: [`vendor/shadcn/customization.md`](./vendor/shadcn/customization.md). Live docs: [Theming](https://ui.shadcn.com/docs/theming).
+Vendored：[`vendor/shadcn/customization.md`](./vendor/shadcn/customization.md)。在线文档：[Theming](https://ui.shadcn.com/docs/theming)。
 
-### Registry authoring
+### 注册表编写
 
-Not duplicated as a single file in the vendor tree; see [Registry](https://ui.shadcn.com/docs/registry) and `build` in [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md).
+未在 vendor 目录下作为单一文件复制；参考 [Registry](https://ui.shadcn.com/docs/registry) 和 [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md) 中的 `build` 部分。
 
-### MCP server
+### MCP 服务器
 
-Vendored: [`vendor/shadcn/mcp.md`](./vendor/shadcn/mcp.md). Live docs: [MCP Server](https://ui.shadcn.com/docs/mcp).
-
----
-
-## How it works
-
-1. **Project detection** — Applies when `components.json` exists (here: `web/default/components.json`).
-2. **Context injection** — Use `shadcn info --json` as ground truth for imports and APIs.
-3. **Pattern enforcement** — Use [`vendor/shadcn/rules/`](./vendor/shadcn/rules/) for concrete markup checks; the complete official workflow reference is listed below for deeper CLI, registry, and preset questions.
-4. **Component discovery** — `shadcn docs`, `shadcn search`, MCP, or registries — see the official workflow reference and MCP doc when deeper context is needed.
+Vendored：[`vendor/shadcn/mcp.md`](./vendor/shadcn/mcp.md)。在线文档：[MCP Server](https://ui.shadcn.com/docs/mcp)。
 
 ---
 
-## Learn more (web)
+## 工作原理
 
-- [CLI](https://ui.shadcn.com/docs/cli) — complements [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md)
+1. **项目检测** — 当存在 `components.json` 时生效（本项目：`web/default/components.json`）。
+2. **上下文注入** — 使用 `shadcn info --json` 作为导入和 API 的基准真相。
+3. **模式强制** — 遵循 [`vendor/shadcn/SKILL.md`](./vendor/shadcn/SKILL.md) 和 [`vendor/shadcn/rules/`](./vendor/shadcn/rules/) 中的规则。
+4. **组件发现** — `shadcn docs`、`shadcn search`、MCP 或注册表 — 参见 vendored 的 SKILL + MCP 文档。
+
+---
+
+## 了解更多（web）
+
+- [CLI](https://ui.shadcn.com/docs/cli) — 补充 [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md)
 - [Theming](https://ui.shadcn.com/docs/theming)
 - [Registry](https://ui.shadcn.com/docs/registry)
 - [skills.sh](https://skills.sh)
 
 ---
 
-## Vendored upstream bundle (deep rules)
+## Vendored 上游包（深度规则）
 
-Snapshot from [shadcn-ui/ui `skills/shadcn`](https://github.com/shadcn-ui/ui/tree/main/skills/shadcn); revision note in [`vendor/shadcn/UPSTREAM.txt`](./vendor/shadcn/UPSTREAM.txt). The upstream workflow is stored as a reference file, with its original skill frontmatter removed, so the vendored copy is not discovered as a second local skill.
+来自 [shadcn-ui/ui `skills/shadcn`](https://github.com/shadcn-ui/ui/tree/main/skills/shadcn) 的快照；版本说明见 [`vendor/shadcn/UPSTREAM.txt`](./vendor/shadcn/UPSTREAM.txt)。
 
-| Doc | Path |
+| 文档 | 路径 |
 | --- | --- |
-| Official shadcn/ui workflow reference | [`vendor/shadcn/official-shadcn-ui-workflow.md`](./vendor/shadcn/official-shadcn-ui-workflow.md) |
-| CLI reference | [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md) |
-| Theming / customization | [`vendor/shadcn/customization.md`](./vendor/shadcn/customization.md) |
+| 完整官方技能正文 | [`vendor/shadcn/SKILL.md`](./vendor/shadcn/SKILL.md) |
+| CLI 参考 | [`vendor/shadcn/cli.md`](./vendor/shadcn/cli.md) |
+| 主题/自定义 | [`vendor/shadcn/customization.md`](./vendor/shadcn/customization.md) |
 | MCP | [`vendor/shadcn/mcp.md`](./vendor/shadcn/mcp.md) |
-| Forms | [`vendor/shadcn/rules/forms.md`](./vendor/shadcn/rules/forms.md) |
-| Composition | [`vendor/shadcn/rules/composition.md`](./vendor/shadcn/rules/composition.md) |
-| Icons | [`vendor/shadcn/rules/icons.md`](./vendor/shadcn/rules/icons.md) |
-| Styling | [`vendor/shadcn/rules/styling.md`](./vendor/shadcn/rules/styling.md) |
+| 表单 | [`vendor/shadcn/rules/forms.md`](./vendor/shadcn/rules/forms.md) |
+| 组合 | [`vendor/shadcn/rules/composition.md`](./vendor/shadcn/rules/composition.md) |
+| 图标 | [`vendor/shadcn/rules/icons.md`](./vendor/shadcn/rules/icons.md) |
+| 样式 | [`vendor/shadcn/rules/styling.md`](./vendor/shadcn/rules/styling.md) |
 | Base vs Radix | [`vendor/shadcn/rules/base-vs-radix.md`](./vendor/shadcn/rules/base-vs-radix.md) |
 
-**Workflow:** Prefer this **root** `SKILL.md` for repo paths (`web/default`, Bun). Read **`vendor/shadcn/official-shadcn-ui-workflow.md`** only when you need the complete official component, registry, or preset workflow. Use **`vendor/shadcn/rules/*.md`** when validating concrete markup.
+**工作流：** 本仓库根目录的 `SKILL.md` 用于项目路径（`web/default`、Bun）。阅读 **`vendor/shadcn/SKILL.md`** 获取完整的上游工作流、模式和 CLI 快速参考。在验证具体标记时使用 **`vendor/shadcn/rules/*.md`**。
