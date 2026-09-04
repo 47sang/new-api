@@ -121,6 +121,63 @@ func TestMergeStreamResponseBodyOpenAIChat(t *testing.T) {
 			"error":{"message":"overloaded","type":"server_error"}
 		}`)
 	})
+
+	t.Run("字符串型错误载荷与类型不符分片不再整块丢弃", func(t *testing.T) {
+		raw := sseBody(
+			`{"id":"chatcmpl-6","object":"chat.completion.chunk","created":"1700000000","model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hi"}}]}`,
+			`{"error":"rate limited"}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"chatcmpl-6","object":"chat.completion","model":"gpt-4o",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"finish_reason":null}],
+			"error":"rate limited"
+		}`)
+	})
+
+	t.Run("音频输出模态按 id/data/transcript 跨分片拼接", func(t *testing.T) {
+		raw := sseBody(
+			`{"id":"chatcmpl-a1","object":"chat.completion.chunk","created":1730000000,"model":"gpt-4o-audio","choices":[{"index":0,"delta":{"role":"assistant"}}]}`,
+			`{"id":"chatcmpl-a1","object":"chat.completion.chunk","created":1730000000,"model":"gpt-4o-audio","choices":[{"index":0,"delta":{"audio":{"id":"audio-1","data":"QUJD","transcript":"你好"}}}]}`,
+			`{"id":"chatcmpl-a1","object":"chat.completion.chunk","created":1730000000,"model":"gpt-4o-audio","choices":[{"index":0,"delta":{"audio":{"data":"REVG","transcript":"世界"}}}]}`,
+			`{"id":"chatcmpl-a1","object":"chat.completion.chunk","created":1730000000,"model":"gpt-4o-audio","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":30}}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"chatcmpl-a1","object":"chat.completion","created":1730000000,"model":"gpt-4o-audio",
+			"choices":[{"index":0,"message":{"role":"assistant","audio":{"id":"audio-1","data":"QUJDREVG","transcript":"你好世界"}},"finish_reason":"stop"}],
+			"usage":{"total_tokens":30}
+		}`)
+	})
+
+	t.Run("未建模扩展字段按规则保留（annotations 数组拼接、logprobs 对象合并）", func(t *testing.T) {
+		raw := sseBody(
+			`{"id":"chatcmpl-x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"See ","annotations":[{"type":"url_citation","url":"https://a"}]},"logprobs":{"content":[{"token":"See"}]}}]}`,
+			`{"id":"chatcmpl-x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"this.","annotations":[{"type":"url_citation","url":"https://b"}]},"logprobs":{"content":[{"token":"this."}]}}]}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"m",
+			"choices":[{
+				"index":0,
+				"message":{"role":"assistant","content":"See this.","annotations":[{"type":"url_citation","url":"https://a"},{"type":"url_citation","url":"https://b"}]},
+				"finish_reason":null,
+				"logprobs":{"content":[{"token":"See"},{"token":"this."}]}
+			}]
+		}`)
+	})
+
+	t.Run("tool_calls 分片缺失 index 时按 id 开启新调用", func(t *testing.T) {
+		raw := sseBody(
+			`{"id":"chatcmpl-2t","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"id":"call_aaa","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]}}]}`,
+			`{"id":"chatcmpl-2t","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_bbb","type":"function","function":{"name":"get_time","arguments":""}}]}}]}`,
+			`{"id":"chatcmpl-2t","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\"tz\":\"PST\"}"}}]},"finish_reason":"tool_calls"}]}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"chatcmpl-2t","object":"chat.completion","created":1,"model":"gpt-4o",
+			"choices":[{"index":0,"message":{"role":"assistant","tool_calls":[
+				{"id":"call_aaa","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}},
+				{"id":"call_bbb","type":"function","function":{"name":"get_time","arguments":"{\"tz\":\"PST\"}"}}
+			]},"finish_reason":"tool_calls"}]
+		}`)
+	})
 }
 
 func TestMergeStreamResponseBodyClaude(t *testing.T) {
@@ -192,6 +249,40 @@ func TestMergeStreamResponseBodyClaude(t *testing.T) {
 		raw := sseBody(`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)
 		assertMergedJson(t, mergeStreamResponseBody(raw), `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)
 	})
+
+	t.Run("citations_delta 引用对象并入块的 citations 数组", func(t *testing.T) {
+		raw := sseBody(
+			`{"type":"message_start","message":{"id":"msg_4","type":"message","role":"assistant","model":"claude-sonnet-4","usage":{"input_tokens":10,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"","citations":[]}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"See docs."}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://a"}}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://b"}}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"msg_4","type":"message","role":"assistant","model":"claude-sonnet-4",
+			"content":[{"type":"text","text":"See docs.","citations":[
+				{"type":"web_search_result_location","url":"https://a"},
+				{"type":"web_search_result_location","url":"https://b"}
+			]}],
+			"stop_reason":"end_turn","stop_sequence":null,
+			"usage":{"input_tokens":10,"output_tokens":20}
+		}`)
+	})
+
+	t.Run("中断截断的 partial_json 以 input_raw 保留原文", func(t *testing.T) {
+		raw := sseBody(
+			`{"type":"message_start","message":{"id":"msg_5","type":"message","role":"assistant","model":"claude-sonnet-4","usage":{"input_tokens":5}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_9","name":"get_weather","input":{}}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"San"}}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"id":"msg_5","type":"message","role":"assistant","model":"claude-sonnet-4",
+			"content":[{"type":"tool_use","id":"toolu_9","name":"get_weather","input":{},"input_raw":"{\"city\": \"San"}],
+			"stop_reason":null,"stop_sequence":null,
+			"usage":{"input_tokens":5}
+		}`)
+	})
 }
 
 func TestMergeStreamResponseBodyGemini(t *testing.T) {
@@ -207,6 +298,24 @@ func TestMergeStreamResponseBodyGemini(t *testing.T) {
 			}],
 			"modelVersion":"gemini-2.0",
 			"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":2,"totalTokenCount":7}
+		}`)
+	})
+
+	t.Run("part 顺序保持不变且 candidate 级字段保留", func(t *testing.T) {
+		raw := sseBody(
+			`{"candidates":[{"content":{"parts":[{"text":"先想一想：2+2 等于 4。","thought":true}],"role":"model"},"index":0}]}`,
+			`{"candidates":[{"content":{"parts":[{"text":"，因为 2+2=4。","thought":true}],"role":"model"},"index":0}]}`,
+			`{"candidates":[{"content":{"parts":[{"text":"答案是 4","thoughtSignature":"sig-x"}],"role":"model"},"index":0,"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"web":{"title":"src"}}]}}]}`,
+		)
+		assertMergedJson(t, mergeStreamResponseBody(raw), `{
+			"candidates":[{
+				"content":{"role":"model","parts":[
+					{"text":"先想一想：2+2 等于 4。，因为 2+2=4。","thought":true},
+					{"text":"答案是 4","thoughtSignature":"sig-x"}
+				]},
+				"finishReason":"STOP","index":0,
+				"groundingMetadata":{"groundingChunks":[{"web":{"title":"src"}}]}
+			}]
 		}`)
 	})
 }
