@@ -483,3 +483,19 @@ export interface UserInfo {
   aff_quota?: number
   remark?: string
 }
+
+// ============================================================================
+// Request/Response Log Types
+// ============================================================================
+
+export interface RequestResponseLog {
+  id: number
+  request_id: string
+  request_body: string
+  response_body: string
+  is_stream: boolean
+  is_completed: boolean
+  response_size: number
+  status_code: number
+  created_at: number
+}

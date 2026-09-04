@@ -147,6 +147,16 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	return logs, err
 }
 
+// GetLogById 根据日志 ID 获取单条日志记录
+func GetLogById(logId int) (*Log, error) {
+	var log Log
+	err := LOG_DB.First(&log, logId).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
 func RecordLog(userId int, logType int, content string) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return

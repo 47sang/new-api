@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -341,6 +342,7 @@ func migrateDB() error {
 		&Redemption{},
 		&Ability{},
 		&Log{},
+		&RequestResponseLog{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -388,9 +390,32 @@ func migrateDB() error {
 
 func migrateLOGDB() error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		// ClickHouse 日志库不迁移 request_response_logs 表，显式禁用该功能避免运行时写入报错
+		if common.RequestResponseLogEnabled {
+			common.RequestResponseLogEnabled = false
+			common.SysLog("request/response logging is not supported with ClickHouse log database, disabled")
+		}
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{})
+	if err := LOG_DB.AutoMigrate(&Log{}); err != nil {
+		return err
+	}
+	if err := LOG_DB.AutoMigrate(&RequestResponseLog{}); err != nil {
+		return err
+	}
+
+	// 启动时清理过期的请求/响应日志
+	if common.RequestResponseLogEnabled && common.RequestResponseLogRetentionDays > 0 {
+		common.SysLog("cleaning up expired request/response logs, retention days: " + strconv.Itoa(common.RequestResponseLogRetentionDays))
+		deleted, err := CleanupOldRequestResponseLogs(common.RequestResponseLogRetentionDays)
+		if err != nil {
+			common.SysError("failed to cleanup request/response logs: " + err.Error())
+		} else if deleted > 0 {
+			common.SysLog("cleaned up " + strconv.FormatInt(deleted, 10) + " expired request/response log(s)")
+		}
+	}
+
+	return nil
 }
 
 func migrateClickHouseLogDB() error {

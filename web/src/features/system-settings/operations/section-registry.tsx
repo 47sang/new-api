@@ -98,6 +98,9 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
+        defaultRequestResponseLogEnabled={Boolean(
+          settings.RequestResponseLogEnabled
+        )}
       />
     ),
   },

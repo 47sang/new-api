@@ -80,12 +80,14 @@ import type { LogCleanupTask } from '../types'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
+  RequestResponseLogEnabled: z.boolean(),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
 
 type LogSettingsSectionProps = {
   defaultEnabled: boolean
+  defaultRequestResponseLogEnabled: boolean
 }
 
 type ServerLogInfo = {
@@ -141,6 +143,7 @@ function isActiveLogCleanupTask(task: LogCleanupTask | null) {
 
 export function LogSettingsSection({
   defaultEnabled,
+  defaultRequestResponseLogEnabled,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -148,6 +151,7 @@ export function LogSettingsSection({
     resolver: zodResolver(logSettingsSchema),
     defaultValues: {
       LogConsumeEnabled: defaultEnabled,
+      RequestResponseLogEnabled: defaultRequestResponseLogEnabled,
     },
   })
 
@@ -174,8 +178,11 @@ export function LogSettingsSection({
   }, [])
 
   useEffect(() => {
-    form.reset({ LogConsumeEnabled: defaultEnabled })
-  }, [defaultEnabled, form])
+    form.reset({
+      LogConsumeEnabled: defaultEnabled,
+      RequestResponseLogEnabled: defaultRequestResponseLogEnabled,
+    })
+  }, [defaultEnabled, defaultRequestResponseLogEnabled, form])
 
   useEffect(() => {
     fetchServerLogInfo()
@@ -257,11 +264,20 @@ export function LogSettingsSection({
   }, [logCleanupActive, logCleanupTaskId, t])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
-    if (values.LogConsumeEnabled === defaultEnabled) return
-    await updateOption.mutateAsync({
-      key: 'LogConsumeEnabled',
-      value: values.LogConsumeEnabled,
-    })
+    if (values.LogConsumeEnabled !== defaultEnabled) {
+      await updateOption.mutateAsync({
+        key: 'LogConsumeEnabled',
+        value: values.LogConsumeEnabled,
+      })
+    }
+    if (
+      values.RequestResponseLogEnabled !== defaultRequestResponseLogEnabled
+    ) {
+      await updateOption.mutateAsync({
+        key: 'RequestResponseLogEnabled',
+        value: values.RequestResponseLogEnabled,
+      })
+    }
   }
 
   const handleRequestCleanLogs = () => {
@@ -353,6 +369,31 @@ export function LogSettingsSection({
                   <FormDescription>
                     {t(
                       'Track per-request consumption to power usage analytics. Keeping this on increases database writes.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='RequestResponseLogEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>
+                    {t('Record full request and response bodies')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Save complete request/response payloads of every relay request for troubleshooting. Responses are not truncated and each request keeps a single row; enable a retention period to bound storage growth. Not supported with ClickHouse log database.'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>

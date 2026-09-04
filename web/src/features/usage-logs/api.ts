@@ -27,6 +27,7 @@ import type {
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
+  RequestResponseLog,
   TaskArtifactsResponse,
   UserInfo,
 } from './types'
@@ -124,4 +125,21 @@ export async function getTaskArtifacts(taskId: string) {
     taskArtifactRequestConfig
   )
   return parseTaskArtifactsResponse(response.data)
+}
+
+// ============================================================================
+// Request/Response Log API
+// ============================================================================
+
+export async function getRequestResponseByLogId(
+  logId: number,
+  isAdmin: boolean
+): Promise<{
+  success: boolean
+  message: string
+  data: RequestResponseLog | null
+}> {
+  const path = `${buildApiPath('/api/log', isAdmin)}/${logId}/request-response`
+  const res = await api.get(path, taskArtifactRequestConfig)
+  return res.data
 }

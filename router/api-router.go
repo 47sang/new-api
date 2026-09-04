@@ -296,6 +296,9 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
+		// 请求/响应日志详情
+		logRoute.GET("/:id/request-response", middleware.AdminAuth(), controller.GetRequestResponseByLogId)
+		logRoute.GET("/self/:id/request-response", middleware.UserAuth(), controller.GetRequestResponseSelfByLogId)
 
 		systemTaskRoute := apiRouter.Group("/system-task")
 		systemTaskRoute.Use(middleware.RootAuth())

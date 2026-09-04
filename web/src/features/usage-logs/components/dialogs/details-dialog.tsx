@@ -49,7 +49,9 @@ import {
   UserCog,
   Info,
   LogIn,
+  FileJson,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -57,6 +59,7 @@ import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -83,7 +86,8 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { getRequestResponseByLogId } from '../../api'
+import { USAGE_BILLING_PATH, type LogOtherData, type RequestResponseLog } from '../../types'
 import { PluginAuthorLink } from '../plugin-author-link'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
@@ -507,6 +511,24 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
 
+  // Tab state for request/response viewer
+  const [activeTab, setActiveTab] = useState<'overview' | 'requestResponse'>(
+    'overview'
+  )
+  const [reqRespLogId, setReqRespLogId] = useState<number | null>(null)
+  const [reqRespData, setReqRespData] = useState<RequestResponseLog | null>(
+    null
+  )
+  const [reqRespError, setReqRespError] = useState<string | null>(null)
+
+  // 切换日志时重置请求/响应数据，避免展示上一条日志的内容
+  useEffect(() => {
+    setActiveTab('overview')
+    setReqRespLogId(null)
+    setReqRespData(null)
+    setReqRespError(null)
+  }, [props.log.id])
+
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
   const isConsume = props.log.type === 2
@@ -661,8 +683,39 @@ export function DetailsDialog(props: DetailsDialogProps) {
       titleClassName='flex items-center gap-2 text-base'
       descriptionClassName='sr-only'
       contentHeight='min(72dvh, 720px)'
-      bodyClassName='pr-2 sm:pr-4'
+      bodyClassName='space-y-3'
     >
+      {/* Tab navigation */}
+      <div className='flex items-center gap-1 border-b'>
+        <button
+          type='button'
+          onClick={() => setActiveTab('overview')}
+          className={cn(
+            'px-3 py-1.5 text-sm font-medium transition-colors',
+            activeTab === 'overview'
+              ? 'border-b-2 border-primary text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {t('Overview')}
+        </button>
+        <button
+          type='button'
+          onClick={() => setActiveTab('requestResponse')}
+          className={cn(
+            'flex items-center gap-1 px-3 py-1.5 text-sm font-medium transition-colors',
+            activeTab === 'requestResponse'
+              ? 'border-b-2 border-primary text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <FileJson className='size-3.5' />
+          {t('Request / Response')}
+        </button>
+      </div>
+
+      {activeTab === 'overview' ? (
+        <ScrollArea className='max-h-[calc(72dvh-9rem)] min-w-0 sm:max-h-[min(72dvh,660px)] sm:pr-4'>
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
@@ -1342,7 +1395,281 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </div>
         )}
       </div>
+        </ScrollArea>
+      ) : (
+        <ScrollArea className='max-h-[calc(72dvh-9rem)] min-w-0 sm:max-h-[min(72dvh,660px)] sm:pr-4'>
+          <ReqRespTabContent
+            logId={props.log.id}
+            isAdmin={props.isAdmin}
+            loadedLogId={reqRespLogId}
+            data={reqRespData}
+            error={reqRespError}
+            onLoaded={(logId, data, error) => {
+              setReqRespLogId(logId)
+              setReqRespData(data)
+              setReqRespError(error)
+            }}
+            onRetry={() => {
+              setReqRespLogId(null)
+              setReqRespError(null)
+            }}
+          />
+        </ScrollArea>
+      )}
     </Dialog>
+  )
+}
+
+// ReqRespTabContent 请求/响应标签页内容：按日志 ID 拉取请求/响应完整内容
+// loadedLogId/onLoaded 由父组件持有缓存状态，切换日志后自动重新拉取
+function ReqRespTabContent(props: {
+  logId: number
+  isAdmin: boolean
+  loadedLogId: number | null
+  data: RequestResponseLog | null
+  error: string | null
+  onLoaded: (
+    logId: number,
+    data: RequestResponseLog | null,
+    error: string | null
+  ) => void
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard({
+    notify: false,
+  })
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (props.loadedLogId === props.logId) return
+    let cancelled = false
+    setLoading(true)
+    getRequestResponseByLogId(props.logId, props.isAdmin)
+      .then((res) => {
+        if (cancelled) return
+        setLoading(false)
+        if (res.success && res.data) {
+          props.onLoaded(props.logId, res.data, null)
+        } else {
+          props.onLoaded(
+            props.logId,
+            null,
+            res.message || t('Failed to load request/response data')
+          )
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLoading(false)
+        props.onLoaded(
+          props.logId,
+          null,
+          t('Failed to load request/response data')
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.logId, props.loadedLogId])
+
+  if (
+    loading ||
+    (props.loadedLogId !== props.logId && !props.data && !props.error)
+  ) {
+    return (
+      <div className='text-muted-foreground py-8 text-center text-sm'>
+        {t('Loading...')}
+      </div>
+    )
+  }
+
+  if (props.error) {
+    return (
+      <div className='space-y-3'>
+        <div className='text-sm text-red-600 dark:text-red-400'>
+          {props.error}
+        </div>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={() => props.onRetry()}
+        >
+          {t('Retry')}
+        </Button>
+      </div>
+    )
+  }
+
+  if (!props.data) {
+    return (
+      <div className='text-muted-foreground text-sm'>
+        {t('No data available')}
+      </div>
+    )
+  }
+
+  const data = props.data
+  return (
+    <div className='space-y-4'>
+      {/* Status code */}
+      {data.status_code > 0 && (
+        <div className='flex items-center gap-2'>
+          <span className='text-muted-foreground text-xs'>
+            {t('Status Code')}:
+          </span>
+          <span
+            className={cn(
+              'font-mono text-sm',
+              data.status_code < 400
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-red-600 dark:text-red-400'
+            )}
+          >
+            {data.status_code}
+          </span>
+          {data.is_stream && (
+            <span className='text-muted-foreground text-xs'>
+              ({t('Streaming')})
+            </span>
+          )}
+          {!data.is_completed && (
+            <span className='text-muted-foreground text-xs'>
+              ({t('Incomplete')})
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Request body */}
+      {data.request_body && (
+        <JsonBlock
+          label={t('Request Body')}
+          content={formatJsonBody(data.request_body, false)}
+          copiedText={copiedText}
+          copyToClipboard={copyToClipboard}
+        />
+      )}
+
+      {/* Response body */}
+      {data.response_body ? (
+        <JsonBlock
+          label={t('Response Body')}
+          content={formatJsonBody(data.response_body, data.is_stream)}
+          copiedText={copiedText}
+          copyToClipboard={copyToClipboard}
+        />
+      ) : (
+        <div className='text-muted-foreground text-xs'>
+          {data.is_completed
+            ? t('No response body')
+            : t('Response body not recorded (binary response or interrupted)')}
+        </div>
+      )}
+
+      {/* Response size info */}
+      {data.response_size > 0 && (
+        <div className='text-muted-foreground text-xs'>
+          {t('Response Size')}: {(data.response_size / 1024).toFixed(1)} KB
+        </div>
+      )}
+    </div>
+  )
+}
+
+// formatJsonBody 格式化展示内容：普通响应尝试 JSON 美化；
+// 流式（SSE）响应逐条提取 data: 载荷的 JSON 后美化，保留 [DONE] 结束标记
+function formatJsonBody(content: string, isStream: boolean): string {
+  if (!isStream) {
+    try {
+      return JSON.stringify(JSON.parse(content), null, 2)
+    } catch {
+      return content
+    }
+  }
+  const out: string[] = []
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith(':')) continue
+    if (!trimmed.startsWith('data:')) {
+      out.push(trimmed)
+      continue
+    }
+    const payload = trimmed.slice(5).trim()
+    if (!payload) continue
+    if (payload === '[DONE]') {
+      out.push('data: [DONE]')
+      continue
+    }
+    try {
+      out.push(JSON.stringify(JSON.parse(payload), null, 2))
+    } catch {
+      out.push(trimmed)
+    }
+  }
+  return out.join('\n\n')
+}
+
+function JsonBlock({
+  label,
+  content,
+  copiedText,
+  copyToClipboard,
+}: {
+  label: string
+  content: string
+  copiedText: string | null
+  copyToClipboard: (text: string) => void
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const maxPreviewLines = 50
+  const lines = content.split('\n')
+  const isLong = lines.length > maxPreviewLines
+
+  return (
+    <div className='space-y-1.5'>
+      <div className='flex items-center justify-between'>
+        <Label className='text-xs font-semibold'>{label}</Label>
+        <div className='flex items-center gap-1'>
+          {isLong && (
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-6 px-2 text-xs'
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? t('Collapse') : t('Expand')}
+            </Button>
+          )}
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-6 w-6 p-0'
+            onClick={() => copyToClipboard(content)}
+            title={t('Copy to clipboard')}
+            aria-label={t('Copy to clipboard')}
+          >
+            {copiedText === content ? (
+              <Check className='size-3.5 text-green-600' />
+            ) : (
+              <Copy className='size-3.5' />
+            )}
+          </Button>
+        </div>
+      </div>
+      <div className='bg-muted/30 relative overflow-hidden rounded-md border'>
+        <pre
+          className={cn(
+            'overflow-x-auto p-3 text-xs leading-relaxed whitespace-pre-wrap break-all',
+            !expanded && isLong && 'max-h-[300px]'
+          )}
+        >
+          {content}
+        </pre>
+      </div>
+    </div>
   )
 }
 
