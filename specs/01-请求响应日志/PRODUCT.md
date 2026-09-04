@@ -10,6 +10,8 @@
 
 **🔑 存储设计原则**：流式响应的分片只在内存中累积，**请求结束后一次性落库**（按 `request_id` UPSERT 覆盖）。不做分片级持久化，避免写放大；存储成本与内容大小线性相关（O(内容大小)），而非 O(n²)。
 
+**🔑 流式内容合并**：流式响应落库时将全部分片**合并为单个最终响应对象**（而非原始 SSE 报文），便于直接阅读模型输出；多轮对话场景下每轮请求只占一行、内容为合并后的单份响应，存储体积远小于原始分片流。
+
 ## 3. 用户行为
 
 ### 3.1 开关控制（默认开启）
@@ -41,9 +43,18 @@
 
 ### 3.4 流式响应的处理
 
-- 流式响应（SSE）**完整记录**：保存原始 SSE 报文（含 `data:` 行与结束标记），标记 `is_stream=true`。
-- 前端识别流式内容后，逐条提取 `data:` 载荷的 JSON 进行格式化展示。
-- 流式响应正常结束 → `is_completed=true`；客户端中途断开 → `is_completed=false`（保存已收到的部分内容）。
+- 流式响应（SSE）**合并记录**：落库前将全部分片合并为单个最终响应对象（JSON），标记 `is_stream=true`。
+- 识别四种主流格式并按其原生最终响应形态合并：
+  - **OpenAI Chat Completions**（`choices[].delta`）→ 合并为 `chat.completion` 对象（`content`/`reasoning_content`/`tool_calls` 拼接、`usage` 与 `finish_reason` 取末值）
+  - **Claude Messages**（`message_start`/`content_block_delta` 等事件）→ 合并为单个 `message` 对象（`text`/`thinking`/`tool_use` 块按序还原、`usage` 以 `message_start` 为基线 `message_delta` 覆盖）
+  - **Gemini**（`candidates`）→ 合并为单个 `GenerateContentResponse`（文本分片拼接、`functionCall` 等非文本 part 原样保留）
+  - **OpenAI Responses**（`response.*` 事件）→ 直接提取 `response.completed`/`response.incomplete`/`response.failed` 终态事件中的完整 `response` 对象
+- **未识别的流式格式**、解析失败或流中无有效内容时，原样保存原始 SSE 报文（数据不丢失）。
+- 流中的错误事件（Claude `error` 事件、OpenAI 错误载荷）并入合并结果的 `error` 字段。
+- 分片中合并器未建模的业务字段（引用 annotations/citations、logprobs、音频输出等）按「字符串拼接、数组拼接、其余取末值」尽量保留；无法重建的字段以原始形态存续于合并结果。
+- 前端对合并后的响应直接 JSON 格式化展示；对旧数据中仍为原始 SSE 报文的记录，自动回退为逐条提取 `data:` 载荷展示。
+- 流式响应正常结束 → `is_completed=true`；客户端中途断开 → `is_completed=false`（保存已合并的部分内容；OpenAI Responses 格式的中断流因无终态事件而回退保存原始报文）。
+- `response_size` 始终记录客户端实际收到的原始流字节数（合并后的响应体通常远小于该值）。
 - WebSocket（Realtime API）连接不记录。
 
 ### 3.5 二进制响应的处理
@@ -68,7 +79,8 @@
 | 请求无 `request_id` | 跳过记录（理论上不会发生，因为 request-id 中间件保证每次请求都有） |
 | 数据库写入失败 | 静默记录错误到系统日志，不影响主请求链路 |
 | 二进制响应（图片/音频/视频） | 不记录响应体，请求体照常记录 |
-| 流式响应中途客户端断开 | 保存已累积的部分内容，`is_completed=false` |
+| 流式响应中途客户端断开 | 保存已合并的部分内容，`is_completed=false` |
+| 未识别的流式格式 / 分片含非法 JSON | 跳过无法解析的分片，合法分片照常合并；整条流无法识别时原样保存原始 SSE 报文 |
 | multipart 请求（文件上传） | 请求体保存占位符（二进制内容不落库），响应照常记录 |
 | 请求报错（上游 4xx/5xx） | 仍记录请求体和错误响应体 |
 | 同一 `request_id` 重复写入 | 按 `request_id` UPSERT 覆盖，始终只保留最新一条 |
@@ -85,7 +97,7 @@
 - [x] 开启功能后，通过 API 发出的请求能够记录请求体和响应体到独立表
 - [x] 日志详情弹窗中「请求/响应」标签页能正确展示请求和响应内容
 - [x] 普通用户无法查看其他用户的请求/响应数据
-- [x] 流式响应（SSE）完整记录，前端可解析展示
+- [x] 流式响应分片合并为单个最终响应对象存储，前端可直接阅读模型输出
 - [x] 每次请求最终只占一行记录（UPSERT），无重复存储
 - [x] 响应体不截断
 - [x] 超过保留期的数据能被自动清理

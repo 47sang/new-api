@@ -1578,10 +1578,17 @@ function ReqRespTabContent(props: {
   )
 }
 
-// formatJsonBody 格式化展示内容：普通响应尝试 JSON 美化；
-// 流式（SSE）响应逐条提取 data: 载荷的 JSON 后美化，保留 [DONE] 结束标记
+// formatJsonBody 格式化展示内容：优先按 JSON 美化（后端已将流式分片合并为单个响应对象）；
+// 兼容旧数据中仍为原始 SSE 报文的流式响应：逐条提取 data: 载荷的 JSON 后美化，保留 [DONE] 结束标记
 function formatJsonBody(content: string, isStream: boolean): string {
-  if (!isStream) {
+  const firstLine = content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith(':'))
+  const isRawSse =
+    !!firstLine &&
+    (firstLine.startsWith('data:') || firstLine.startsWith('event:'))
+  if (!(isStream && isRawSse)) {
     try {
       return JSON.stringify(JSON.parse(content), null, 2)
     } catch {

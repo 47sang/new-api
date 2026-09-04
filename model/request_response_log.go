@@ -17,13 +17,14 @@ type RequestResponseLog struct {
 	RequestId string `json:"request_id" gorm:"type:varchar(64);uniqueIndex;not null"`
 	// 大文本列不加 type 标签：GORM 在 MySQL 上映射为 LONGTEXT，PostgreSQL/SQLite 上映射为 TEXT
 	RequestBody string `json:"request_body"`
-	// 非流式响应：完整响应体；流式响应：完整原始 SSE 报文；二进制响应或中断：留空
+	// 非流式响应：完整响应体；流式响应：分片合并后的单个最终响应对象（JSON），
+	// 未识别的流式格式保留原始 SSE 报文；二进制响应：留空
 	ResponseBody string `json:"response_body"`
 	// IsStream 标记响应是否为流式（SSE）
 	IsStream bool `json:"is_stream"`
 	// IsCompleted 标记响应是否完整捕获（流式正常结束或非流式完整响应=true，客户端中断或二进制响应=false）
 	IsCompleted bool `json:"is_completed"`
-	// ResponseSize 响应体字节大小，0 表示无响应体（二进制或中断）
+	// ResponseSize 响应体字节大小（流式为客户端实际收到的原始 SSE 报文大小），0 表示无响应体（二进制响应）
 	ResponseSize int `json:"response_size"`
 	// StatusCode HTTP 状态码，0 表示未设置
 	StatusCode int   `json:"status_code"`

@@ -15,6 +15,13 @@
 │   │  - WS 升级请求跳过；二进制响应不落库                  │   │
 │   │  - c.Next() 后异步保存（分片只在内存累积）            │   │
 │   └─────────────────────────────────────────────────────┘   │
+│              ▼ 异步 goroutine 内                             │
+│   middleware/response_stream_merge.go                       │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │  mergeStreamResponseBody                             │   │
+│   │  - SSE 分片合并为单个最终响应对象（4 类主流格式）      │   │
+│   │  - 未识别格式原样回退，数据不丢失                     │   │
+│   └─────────────────────────────────────────────────────┘   │
 │              ▲                                               │
 │              │ 通过路由中间件挂载                             │
 │              │                                               │
@@ -56,7 +63,7 @@
 | `id` | BIGINT | 主键, 自增, 索引 | 内部主键 |
 | `request_id` | VARCHAR(64) | 唯一索引, 非空 | 关联 `logs.request_id` |
 | `request_body` | LONGTEXT/TEXT | — | 原始请求体（multipart 存占位符） |
-| `response_body` | LONGTEXT/TEXT | — | 原始响应体（非截断；流式=完整 SSE 报文） |
+| `response_body` | LONGTEXT/TEXT | — | 响应体（非截断；流式=分片合并后的单个最终响应对象 JSON，未识别格式=原始 SSE 报文） |
 | `is_stream` | BOOLEAN | 默认 false | 是否流式（SSE）响应 |
 | `is_completed` | BOOLEAN | 默认 true | 响应是否完整捕获（中断/二进制=false） |
 | `response_size` | INT | 默认 0 | 响应体字节大小 |
@@ -123,7 +130,7 @@ storage, err := common.GetBodyStorage(c)
 | 响应类型 | Content-Type | 处理方式 |
 |---|---|---|
 | JSON API 响应 | `application/json` | 完整捕获，`is_stream=false` |
-| SSE 流式 | `text/event-stream` | 完整捕获原始 SSE 报文，`is_stream=true` |
+| SSE 流式 | `text/event-stream` | 完整捕获原始 SSE 报文，`is_stream=true`；落库前合并为单个最终响应对象（见 3.3） |
 | 图片 / 音频 / 视频 | `image/*` `audio/*` `video/*` `application/octet-stream` | 响应体不落库（置空），`is_completed=false` |
 
 **WebSocket 检测**：通过 `Upgrade: websocket` 请求头判断，跳过包装直接透传（`/v1/realtime` 本就在独立路由组，此为兜底）。
@@ -136,7 +143,50 @@ storage, err := common.GetBodyStorage(c)
 - **背压保护**：并发落库 goroutine 由容量为 8 的信号量限制，队列满时丢弃并输出 SysLog，防止日志库变慢（SQLite 锁、MySQL 慢查询）时内存无界增长
 - **编码净化**：落库前 `strings.ToValidUTF8` 替换非法字节为 U+FFFD，避免 MySQL（utf8mb4 严格模式）/PostgreSQL 拒绝写入导致三库行为不一致
 
-### 3.3 保存与 UPSERT
+### 3.3 流式响应合并（response_stream_merge.go）
+
+原始 SSE 报文每个分片都携带完整的 JSON 结构体（`id`/`model`/`object` 等），逐条存储冗余极大，尤其多轮对话场景。因此在落库前的异步 goroutine 中调用 `mergeStreamResponseBody(raw)`，将整条流**合并为单个最终响应对象**：
+
+```
+原始 SSE 报文 ──▶ parseSSEDataPayloads() 提取 data 载荷
+                       │（忽略 event:/注释行、跳过 [DONE]、多行 data 以 \n 连接、
+                       │  单行上限 32MB，覆盖 base64 大载荷；scanner 出错输出 SysLog 告警）
+                       ▼
+              逐载荷探测格式（首个含 choices/candidates 键或
+              type 为 Claude 事件/response.* 的分片决定格式）
+   ┌──────────────┬──────────────┬──────────────┬─────────────────┐
+   ▼              ▼              ▼              ▼
+choices[].delta  type=message_start…  candidates  type=response.*
+OpenAI Chat      Claude Messages      Gemini      OpenAI Responses
+合并为           合并为               合并为       提取终态事件中的
+chat.completion  message 对象         生成式响应    完整 response 对象
+   └──────────────┴──────────────┴──────────────┴─────────────────┘
+                       ▼
+          未识别 / 解析失败 / 无有效内容 → 原样返回原始 SSE 报文
+```
+
+**合并规则要点：**
+
+| 格式 | 识别特征 | 合并行为 |
+|---|---|---|
+| OpenAI Chat | 顶层存在 `choices` 键 | `content`/`reasoning_content`/`reasoning`/`refusal`/`tool_calls[].function.arguments` 按序拼接；`tool_calls` 按 index 归并（缺 index 时按 id 判定新调用，id/type/name 取首个非空）；`delta.audio` 的 `data`/`transcript` 拼接、`id`/`expires_at` 取首个；`finish_reason`/`usage` 取最后一个非空值；`object` 规范化为 `chat.completion`；顶部元字段（`id`/`created`/`model`/`system_fingerprint`/`service_tier`）取首个非空分片；**delta/choice 上未建模的业务字段**（`annotations`、`logprobs` 等扩展）按「字符串拼接、数组拼接、其余取末值」保留在合并结果中 |
+| Claude | 事件 `type` ∈ message_start/content_block_*/message_delta/message_stop/ping/error | 块按 `index` 归并，`text_delta`/`thinking_delta`/`signature_delta`/`input_json_delta`/`citations_delta` 分别累积；块对象以 `content_block_start` 原始字段为基础（保留未知字段）后叠加累积内容；`input` 的 `partial_json` 在流结束时解析为对象，**解析失败（中断截断）时以 `input_raw` 字符串保留参数原文**；`citations` 与块已有的数组合并；`usage` 以 `message_start` 为基线、`message_delta` 覆盖；`stop_reason`/`stop_sequence` 取 `message_delta` 末值 |
+| Gemini | 顶层存在 `candidates` 键 | 候选按 `index` 归并；同类型相邻 part 按出现顺序合并（纯 `text` 与 `text+thought` 分别拼接，非文本 part 原样保留，不改变 part 顺序）；candidate 级未拆分字段（`safetyRatings`、`groundingMetadata`、`citationMetadata` 等）取末值保留；`finishReason`/`usageMetadata` 取末值 |
+| OpenAI Responses | 事件 `type` 以 `response.` 开头 | 直接提取 `response.completed` / `response.incomplete` / `response.failed` 终态事件携带的完整 `response` 对象 |
+
+**容错与回退：**
+
+- 单个分片 JSON 非法（如中断导致截断）→ 跳过该分片，合法分片照常合并
+- 分片为合法 JSON 但个别字段类型与模型不符（如字符串型 `error`）→ 类型不符的字段被跳过，**其余字段照常参与合并**，整块不再被丢弃
+- 未识别格式、全部分片非法、或合并结果无有效内容 → **原样返回原始 SSE 报文**，数据不丢失
+- 单个 data 行超过 32MB 上限时 scanner 终止并输出 SysLog 告警（合并结果为已扫描部分，不会无告警静默截断）
+- 流中错误事件（Claude `error` 事件、OpenAI `error` 载荷）并入合并结果的 `error` 字段
+- JSON 操作全部走 `common.Marshal` / `common.UnmarshalJsonStr` 包装（项目 JSON 规范）
+- 合并位于异步落库 goroutine 中执行（CPU 密集操作不占用请求主链路）
+
+**兼容性影响：** 该合并只改变 `response_body` 列的**内容格式**，无表结构变更、无迁移需求。`response_size` 仍记录客户端实际收到的原始流字节数（与合并后内容大小无关联）。前端对合并后 JSON 直接格式化展示，并对旧数据中仍为原始 SSE 报文的记录回退为逐条解析展示（按首行是否以 `data:`/`event:` 开头判定）。
+
+### 3.4 保存与 UPSERT
 
 ```go
 LOG_DB.Clauses(clauses.OnConflict{
@@ -148,7 +198,7 @@ LOG_DB.Clauses(clauses.OnConflict{
 - MySQL → `ON DUPLICATE KEY UPDATE`；PostgreSQL / SQLite → `ON CONFLICT (request_id) DO UPDATE`（GORM 自动翻译，三库兼容）
 - 正常情况下 `request_id` 全局唯一，冲突不会发生；UPSERT 是幂等性兜底
 
-### 3.4 路由集成
+### 3.5 路由集成
 
 | 路由组 | 中间件 | 排除场景 |
 |---|---|---|
@@ -157,7 +207,7 @@ LOG_DB.Clauses(clauses.OnConflict{
 | `relayGeminiRouter` (`/v1beta/...`) | `ResponseRecorderMiddleware` | — |
 | `relayMjRouter` + `relayMjModeRouter`（共用 `registerMjRouterGroup`） | `ResponseRecorderMiddleware` | `GET /image/:id`（二进制图片，注册于 Use 之前，天然不带中间件） |
 
-### 3.5 API 路由
+### 3.6 API 路由
 
 | 方法 | 路径 | 中间件 | 说明 |
 |---|---|---|---|
@@ -196,7 +246,7 @@ LOG_DB.Clauses(clauses.OnConflict{
 | 写入次数 | **每请求恰好一次** UPSERT，不随流式分片数增长 |
 | 写入时机 | `c.Next()` 后的 goroutine，不阻塞主链路 |
 | 开关关闭时开销 | 零（中间件开头直接 `c.Next()` 返回） |
-| 单条记录体积 | 不截断，与实际请求/响应大小线性相关 |
+| 单条记录体积 | 不截断；流式响应为分片合并后的单个响应对象（通常远小于原始报文），未识别格式为原始 SSE 报文 |
 | 7 天数据估算 | 按日期滚动清理兜底，总量 ≈ 日均请求量 × 平均体积 × 7 |
 
 ## 7. 数据库迁移
@@ -213,7 +263,11 @@ GORM 的 `AutoMigrate` 会自动创建 `request_response_logs` 表（如果不�
 middleware/response_recorder.go
   ├── common (RequestResponseLogEnabled, GetBodyStorage, RequestIdKey, SysLog)
   ├── gin (gin.ResponseWriter, gin.Context)
+  ├── middleware/response_stream_merge.go (mergeStreamResponseBody，流式落库前合并)
   └── model.SaveRequestResponseLog (通过回调函数传入，避免循环导入)
+
+middleware/response_stream_merge.go
+  └── common (Marshal, UnmarshalJsonStr)
 
 model/request_response_log.go
   ├── common (RequestResponseLogEnabled, GetTimestamp, SysLog, SysError)

@@ -163,6 +163,12 @@ func saveRequestResponse(c *gin.Context, rec *responseRecorder, saveFunc func(re
 			}
 		}()
 
+		// 流式响应在落库前合并为单个最终响应对象（CPU 密集，放在异步 goroutine 中执行）；
+		// 未识别的格式原样保留原始 SSE 报文
+		if isStream {
+			responseBody = mergeStreamResponseBody(responseBody)
+		}
+
 		saveFunc(requestId, requestBody, responseBody, isStream, isCompleted, responseSize, statusCode)
 	}()
 }
