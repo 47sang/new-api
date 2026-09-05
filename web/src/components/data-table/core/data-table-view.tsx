@@ -112,6 +112,7 @@ function UnifiedTableView<TData>({
         />
         {renderTableBody(props, rows, colSpan, getColumnClassName)}
       </Table>
+      {props.afterTable}
     </div>
   )
 }
@@ -163,6 +164,7 @@ function SplitHeaderTableView<TData>({
           />
           {renderTableBody(props, rows, colSpan, getColumnClassName)}
         </table>
+        {props.afterTable}
       </div>
     </div>
   )

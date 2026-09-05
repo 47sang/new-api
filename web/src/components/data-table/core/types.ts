@@ -40,6 +40,8 @@ export type DataTableViewProps<TData> = {
   table: TanstackTable<TData>
   isLoading?: boolean
   rows?: Row<TData>[]
+  /** Rendered inside the scrollable container, right after the table. */
+  afterTable?: React.ReactNode
   emptyTitle?: string
   emptyDescription?: string
   emptyIcon?: React.ReactNode

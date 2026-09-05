@@ -484,6 +484,7 @@ export const STATIC_I18N_KEYS = [
   'Drawing task records',
   'Task Logs',
   'System task records',
+  'Log4',
   'Personal Center Area',
   'User personal functions',
   'Wallet Management',
