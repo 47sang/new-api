@@ -731,6 +731,8 @@
     "Cache Creation": "Tạo cache",
     "Cache Creation (1h)": "Tạo cache (1h)",
     "Cache Creation (5m)": "Tạo cache (5m)",
+    "Message {{index}}": "Tin nhắn {{index}}",
+    "~{{count}} tokens (estimated)": "~{{count}} token (ước tính)",
     "View the request and response content of this log": "Xem nội dung yêu cầu và phản hồi của nhật ký này",
     "Open log details": "Mở chi tiết nhật ký",
     "Assistant": "Trợ lý",

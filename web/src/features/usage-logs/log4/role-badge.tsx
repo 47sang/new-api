@@ -24,13 +24,14 @@ import type { Log4Role } from './request-body'
 import { LOG4_ROLE_META } from './role-meta'
 
 /** Colored role badge used by the message list and the by-role breakdown. */
-export function RoleBadge(props: { role: Log4Role }) {
+export function RoleBadge(props: { role: Log4Role; className?: string }) {
   const { t } = useTranslation()
   const meta = LOG4_ROLE_META[props.role]
   return (
     <span
       className={cn(
         'inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium',
+        props.className,
         meta.badgeClass
       )}
     >

@@ -57,7 +57,9 @@ function ToolCallBlock(props: { name: string; arguments: string }) {
         {props.name}
       </span>
       {props.arguments ? (
-        <pre className='max-h-60 overflow-y-auto text-xs leading-relaxed break-all whitespace-pre-wrap'>
+        // No max-height here: the outer detail pane scrolls, so long
+        // arguments fill the remaining space instead of a fixed box.
+        <pre className='text-xs leading-relaxed break-all whitespace-pre-wrap'>
           {props.arguments}
         </pre>
       ) : null}
@@ -73,7 +75,7 @@ function ToolResultBlock(props: { id: string; content: string }) {
           {props.id}
         </span>
       ) : null}
-      <pre className='max-h-60 overflow-y-auto text-xs leading-relaxed break-all whitespace-pre-wrap'>
+      <pre className='text-xs leading-relaxed break-all whitespace-pre-wrap'>
         {props.content}
       </pre>
     </div>
@@ -283,9 +285,28 @@ export function Log4MessageBrowser(props: {
                   <span className='text-muted-foreground/70 w-5 shrink-0 pt-0.5 text-right font-mono text-[11px] tabular-nums'>
                     {entry.index + 1}
                   </span>
-                  <span className='flex min-w-0 flex-1 flex-col gap-0.5'>
-                    <RoleBadge role={entry.message.role} />
-                    <span className='line-clamp-2 text-xs leading-relaxed break-all whitespace-pre-wrap'>
+                  {/* OpenRouter-style row: fixed-width role badge on the
+                      left, preview text starting right next to it. The
+                      preview must not be pre-wrap or line-clamp stops
+                      limiting the row height. */}
+                  <span className='flex min-w-0 flex-1 items-start gap-2'>
+                    <RoleBadge
+                      role={entry.message.role}
+                      className='w-14 justify-center'
+                    />
+                    {/* Inline -webkit-line-clamp instead of the Tailwind
+                        class: immune to cascade/HMR ordering issues, and
+                        pre-wrap must never reappear here or rows grow
+                        unbounded. */}
+                    <span
+                      className='min-w-0 flex-1 text-xs leading-relaxed break-all'
+                      style={{
+                        display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: 2,
+                        overflow: 'hidden',
+                      }}
+                    >
                       {messagePreview(entry.message) || '—'}
                     </span>
                   </span>

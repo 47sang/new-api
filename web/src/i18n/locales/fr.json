@@ -731,6 +731,8 @@
     "Cache Creation": "Création cache",
     "Cache Creation (1h)": "Création cache (1h)",
     "Cache Creation (5m)": "Création cache (5m)",
+    "Message {{index}}": "Message {{index}}",
+    "~{{count}} tokens (estimated)": "~{{count}} tokens (estimé)",
     "View the request and response content of this log": "Voir le contenu de la requête et de la réponse de cette entrée",
     "Open log details": "Ouvrir les détails du journal",
     "Assistant": "Assistant",

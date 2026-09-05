@@ -24,6 +24,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import { LogCostDisplay } from '../components/log-cost-display'
@@ -65,7 +71,10 @@ function TokensPerMessageChart(props: {
   // Precomputed keys/styling keep the map callback free of index-based keys.
   const bars = props.messages.map((message, position) => ({
     key: `bar-${position}-${message.role}`,
-    title: `#${position + 1} ${message.role} · ~${props.estimates[position]} tok`,
+    index: position,
+    roleLabelKey: LOG4_ROLE_META[message.role].labelKey,
+    cached: Boolean(message.cached),
+    tokens: props.estimates[position],
     barClass: message.cached
       ? 'bg-slate-400/80'
       : LOG4_ROLE_META[message.role].dotClass,
@@ -79,30 +88,51 @@ function TokensPerMessageChart(props: {
       </span>
       {/* Each bar is a full-height button so short messages still have a
           comfortable click target; the colored span inside is purely visual,
-          bottom-aligned at the estimated token height. */}
-      <div className='flex h-16 items-stretch gap-px overflow-hidden'>
-        {bars.map((bar, position) => (
-          <button
-            key={bar.key}
-            type='button'
-            title={bar.title}
-            aria-label={bar.title}
-            aria-pressed={props.selectedMessageIndex === position}
-            onClick={() => props.onBarClick(position)}
-            className={cn(
-              'relative flex w-full min-w-[2px] flex-1 cursor-pointer items-end rounded-sm transition-colors',
-              props.selectedMessageIndex === position
-                ? 'bg-primary/10'
-                : 'hover:bg-muted/40'
-            )}
-          >
-            <span
-              className={cn('w-full rounded-sm', bar.barClass)}
-              style={{ height: `${bar.height}%` }}
-            />
-          </button>
-        ))}
-      </div>
+          bottom-aligned at the estimated token height. Hovering shows an
+          OpenRouter-style tooltip (portal-rendered, so narrow columns never
+          clip it). */}
+      {/* overflow-hidden keeps hundreds of sub-pixel bars from spilling
+          past the card; bars shrink via min-w-0 instead of min-w so the
+          chart always fits its grid column. */}
+      <TooltipProvider delay={60}>
+        <div className='flex h-16 items-stretch gap-px overflow-hidden'>
+          {bars.map((bar) => (
+            <Tooltip key={bar.key}>
+              <TooltipTrigger
+                render={
+                  <button
+                    type='button'
+                    aria-label={`#${bar.index + 1} ${t(bar.roleLabelKey)} · ~${bar.tokens} tok`}
+                    aria-pressed={props.selectedMessageIndex === bar.index}
+                    onClick={() => props.onBarClick(bar.index)}
+                    className={cn(
+                      'relative flex w-full min-w-0 flex-1 cursor-pointer items-end rounded-sm transition-colors',
+                      props.selectedMessageIndex === bar.index
+                        ? 'bg-primary/10'
+                        : 'hover:bg-muted/40'
+                    )}
+                  >
+                    <span
+                      className={cn('w-full rounded-sm', bar.barClass)}
+                      style={{ height: `${bar.height}%` }}
+                    />
+                  </button>
+                }
+              />
+              <TooltipContent className='flex-col items-start gap-0.5'>
+                <span className='font-medium'>
+                  {t('Message {{index}}', { index: bar.index + 1 })} ·{' '}
+                  {t(bar.roleLabelKey)}
+                </span>
+                <span>
+                  {t('~{{count}} tokens (estimated)', { count: bar.tokens })}
+                </span>
+                {bar.cached ? <span>{t('Cached')}</span> : null}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      </TooltipProvider>
       <div className='flex flex-wrap items-center gap-x-3 gap-y-1'>
         {roles.map(([role, meta]) => (
           <span

@@ -731,6 +731,8 @@
     "Cache Creation": "Создание кэша",
     "Cache Creation (1h)": "Создание кэша (1h)",
     "Cache Creation (5m)": "Создание кэша (5m)",
+    "Message {{index}}": "Сообщение {{index}}",
+    "~{{count}} tokens (estimated)": "~{{count}} токенов (оценка)",
     "View the request and response content of this log": "Просмотреть содержимое запроса и ответа этой записи",
     "Open log details": "Открыть детали записи",
     "Assistant": "Ассистент",

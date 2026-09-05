@@ -298,11 +298,11 @@ describe('Log4DetailDialog', () => {
     // Wait for the chart bars to render
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /#2 user/ })
+        screen.getByRole('button', { name: /#2 User/ })
       ).toBeInTheDocument()
     })
     // Click the third bar -> the third message is selected and shown
-    await user.click(screen.getByRole('button', { name: /#3 assistant/ }))
+    await user.click(screen.getByRole('button', { name: /#3 Assistant/ }))
     expect(screen.getByText('Message 3 of 3')).toBeInTheDocument()
     await waitFor(() => {
       expect(

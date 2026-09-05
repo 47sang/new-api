@@ -731,6 +731,8 @@
     "Cache Creation": "缓存创建",
     "Cache Creation (1h)": "缓存创建 (1h)",
     "Cache Creation (5m)": "缓存创建 (5m)",
+    "Message {{index}}": "第 {{index}} 条消息",
+    "~{{count}} tokens (estimated)": "约 {{count}} tokens（估算）",
     "View the request and response content of this log": "查看此日志的请求与响应内容",
     "Open log details": "打开日志详情",
     "Assistant": "助手",

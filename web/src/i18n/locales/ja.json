@@ -731,6 +731,8 @@
     "Cache Creation": "キャッシュ作成",
     "Cache Creation (1h)": "キャッシュ作成 (1h)",
     "Cache Creation (5m)": "キャッシュ作成 (5m)",
+    "Message {{index}}": "メッセージ {{index}}",
+    "~{{count}} tokens (estimated)": "約 {{count}} トークン（推定）",
     "View the request and response content of this log": "このログのリクエストとレスポンスの内容を表示",
     "Open log details": "ログの詳細を開く",
     "Assistant": "アシスタント",

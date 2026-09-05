@@ -305,8 +305,12 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
       description={t('View the request and response content of this log')}
       descriptionClassName='sr-only'
       titleClassName='flex items-center gap-2 text-base'
-      contentClassName='min-w-0 sm:max-w-6xl'
-      contentHeight='min(80dvh, 800px)'
+      // Near-fullscreen dialog: 96% of the viewport in both dimensions.
+      // [&>div] lifts the body wrapper's hardcoded max-h so the 96dvh
+      // content height is actually honored (the root dialog keeps its own
+      // max-h-[calc(100vh-2rem)] guard).
+      contentClassName='min-w-0 sm:max-w-[96vw] [&>div]:max-h-none'
+      contentHeight='96dvh'
       bodyClassName='h-full'
     >
       <div className='flex h-full min-h-0 flex-col gap-2'>
