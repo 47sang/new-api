@@ -157,6 +157,21 @@ export type Log4Page = {
   page_size: number
 }
 
+/** Tabs of the Log4 row detail dialog. */
+export type Log4DetailTab = 'input' | 'output' | 'raw'
+
+/**
+ * Resolve the detail-dialog tab a row click should open: clicking the
+ * Output column (completion_tokens) jumps straight to the output tab,
+ * anything else to the input tab.
+ *
+ * @param columnId - data-column-id of the clicked cell (null when the row
+ *   itself is activated via keyboard)
+ */
+export function resolveDetailTab(columnId: string | null): Log4DetailTab {
+  return columnId === 'completion_tokens' ? 'output' : 'input'
+}
+
 /**
  * Merge loaded pages into a single de-duplicated row list. Rows are keyed by
  * log id (real ids for admins, stable-per-offset synthetic ids for users), so

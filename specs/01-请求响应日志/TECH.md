@@ -47,7 +47,7 @@
 │   controller/request_response_log.go                        │
 │   ┌─────────────────────────────────────────────────────┐   │
 │   │  GET /api/log/:id/request-response (admin)           │   │
-│   │  GET /api/log/self/:id/request-response (user)       │   │
+│   │  GET /api/log/self/request-response (user)           │   │
 │   └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -211,14 +211,12 @@ LOG_DB.Clauses(clauses.OnConflict{
 
 | 方法 | 路径 | 中间件 | 说明 |
 |---|---|---|---|
-| `GET` | `/api/log/:id/request-response` | `AdminAuth()` | 管理员查看任意日志的请求/响应 |
-| `GET` | `/api/log/self/:id/request-response` | `UserAuth()` | 普通用户查看自己的请求/响应 |
+| `GET` | `/api/log/:id/request-response` | `AdminAuth()` | 管理员查看任意日志的请求/响应（按日志 ID） |
+| `GET` | `/api/log/self/request-response?request_id=` | `UserAuth()` | 普通用户按 request_id 查看自己的请求/响应 |
 
 查询流程：
-1. 从 `logs` 表按 `id` 获取日志记录（新增 `model.GetLogById`），提取 `request_id`
-2. 权限校验：非管理员需 `log.UserId == currentUserId`
-3. 从 `request_response_logs` 表按 `request_id` 查询完整数据
-4. 返回 `RequestResponseLog` JSON
+- 管理员：1. 从 `logs` 表按 `id` 获取日志记录（`model.GetLogById`），提取 `request_id`；2. 从 `request_response_logs` 表按 `request_id` 查询完整数据并返回
+- 普通用户：1. 携带列表行中的真实 `request_id`（用户侧日志列表返回的 `id` 是合成展示 ID，不能作为查询键）；2. 后端通过 `logs` 表 `(request_id, user_id)` 校验归属（`model.HasUserLogByRequestId`），未通过统一返回 not found 防探测；3. 按 `request_id` 查询完整数据并返回
 
 ## 4. 配置项
 

@@ -55,7 +55,12 @@ const mockedGetAllLogs = vi.mocked(getAllLogs)
 const i18n = createInstance()
 await i18n.use(initReactI18next).init({
   lng: 'en',
-  resources: { en: { translation: {} } },
+  // zh exists so the language-switch regression test can assert translated
+  // cell text; other tests keep running with the empty en catalog.
+  resources: {
+    en: { translation: {} },
+    zh: { translation: { 'Cache Read': '缓存读取' } },
+  },
 })
 
 type LogsResponse = Awaited<ReturnType<typeof getUserLogs>>
@@ -214,6 +219,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
   observers.length = 0
+  // The language-switch test leaves the UI language mid-suite otherwise.
+  if (i18n.language !== 'en') {
+    void i18n.changeLanguage('en')
+  }
 })
 
 describe('Log4Table infinite scroll', () => {
@@ -395,5 +404,39 @@ describe('Log4Table load-more fallback', () => {
 
     await waitFor(() => expect(rowCount()).toBe(PAGE_SIZE + 1))
     expect(requestedPages).toEqual([1, 2])
+  })
+})
+
+describe('Log4Table row rerender on language change', () => {
+  test('re-renders already-loaded cells when the UI language switches', async () => {
+    // The table memoizes rows; cellRenderColumns must make column-definition
+    // changes (new t() closures after a language switch) part of the render
+    // identity, or loaded cells keep the previous language until refetch.
+    await i18n.changeLanguage('en')
+    const log = {
+      ...buildLog(1),
+      prompt_tokens: 110464,
+      other: JSON.stringify({ cache_tokens: 110464 }),
+    }
+    mockedGetUserLogs.mockResolvedValue(
+      envelope({ items: [log], total: 1, page: 1, page_size: 1 })
+    )
+    renderTable()
+
+    await waitFor(() =>
+      expect(screen.getAllByText(/Cache Read/).length).toBeGreaterThan(0)
+    )
+
+    await i18n.changeLanguage('zh')
+    await waitFor(() => {
+      expect(
+        screen.getAllByText((_, el) =>
+          Boolean(el?.textContent?.includes('缓存读取'))
+        ).length
+      ).toBeGreaterThan(0)
+    })
+    // No English remnants of the frozen cells remain in the loaded rows.
+    expect(screen.queryByText('Cache Read')).not.toBeInTheDocument()
+    await i18n.changeLanguage('en')
   })
 })

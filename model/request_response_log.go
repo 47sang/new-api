@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,25 @@ func GetRequestResponseLogByRequestId(requestId string) (*RequestResponseLog, er
 		return nil, err
 	}
 	return &log, nil
+}
+
+// HasUserLogByRequestId 校验指定 request_id 的日志是否属于该用户，
+// 用于普通用户请求/响应详情的归属检查（logs 表 request_id 已建索引）
+func HasUserLogByRequestId(requestId string, userId int) (bool, error) {
+	if requestId == "" {
+		return false, nil
+	}
+	var existing Log
+	err := LOG_DB.Select("id").
+		Where("request_id = ? AND user_id = ?", requestId, userId).
+		First(&existing).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // CleanupOldRequestResponseLogs 清理过期的请求/响应日志

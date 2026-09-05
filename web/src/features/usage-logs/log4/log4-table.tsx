@@ -28,7 +28,7 @@ For commercial licensing, please contact support@quantumnous.com
  * it is actually visible inside this container).
  */
 import { useInfiniteQuery, useIsFetching } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -48,10 +48,13 @@ import {
   buildLog4QueryParams,
   createLog4GetNextPageParam,
   flattenLog4Pages,
+  resolveDetailTab,
+  type Log4DetailTab,
   type Log4Filters,
   type Log4Page,
 } from './lib'
 import { useLog4Columns } from './log4-columns'
+import { Log4DetailDialog } from './log4-detail-dialog'
 
 const errorRowTint = 'bg-rose-50/40 dark:bg-rose-950/20'
 
@@ -144,6 +147,33 @@ export function Log4Table(props: Log4TableProps) {
   // isFetchingNextPage propagates through a re-render, and each of them must
   // not enqueue another page fetch.
   const fetchingNextRef = useRef(false)
+  const [detailLog, setDetailLog] = useState<UsageLog | null>(null)
+  const [detailTab, setDetailTab] = useState<Log4DetailTab>('input')
+
+  // Opening from the Output column jumps straight to the output tab; the
+  // clicked cell is found via the data-column-id the table puts on each td.
+  const openRowDetail = useCallback(
+    (event: React.MouseEvent, log: UsageLog) => {
+      const cell = (event.target as HTMLElement).closest('td')
+      setDetailTab(
+        resolveDetailTab(cell?.getAttribute('data-column-id') ?? null)
+      )
+      setDetailLog(log)
+    },
+    []
+  )
+
+  // Keyboard parity for the clickable rows (Enter / Space).
+  const handleRowKeyDown = useCallback(
+    (event: React.KeyboardEvent, log: UsageLog) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        setDetailTab('input')
+        setDetailLog(log)
+      }
+    },
+    []
+  )
 
   const tryFetchNextPage = useCallback(() => {
     // While the last fetch failed, retrying is an explicit action (Retry
@@ -267,10 +297,27 @@ export function Log4Table(props: Log4TableProps) {
             <DataTableRow
               key={row.id}
               row={row}
-              className={cn('transition-colors', tintClass)}
+              className={cn(
+                'hover:bg-muted/40 cursor-pointer transition-colors',
+                tintClass
+              )}
+              onClick={(event) => openRowDetail(event, row.original)}
+              onKeyDown={(event) => handleRowKeyDown(event, row.original)}
+              tabIndex={0}
+              aria-label={t('Open log details')}
               getColumnClassName={getLog4CellClassName}
+              cellRenderColumns={table.options.columns}
             />
           )
+        }}
+      />
+      <Log4DetailDialog
+        log={detailLog}
+        isAdmin={props.isAdmin}
+        open={!!detailLog}
+        initialTab={detailTab}
+        onOpenChange={(open) => {
+          if (!open) setDetailLog(null)
         }}
       />
     </div>

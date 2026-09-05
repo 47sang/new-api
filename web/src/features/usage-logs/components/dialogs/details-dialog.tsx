@@ -80,15 +80,18 @@ import {
   getResponseTimeColor,
   getReasoningEffortVariant,
   renderAuditContent,
+  formatJsonBody,
 } from '../../lib/format'
 import {
   getLogTypeConfig,
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import { getRequestResponseByLogId } from '../../api'
+import { getSelfRequestResponseByRequestId, getRequestResponseByLogId } from '../../api'
 import { USAGE_BILLING_PATH, type LogOtherData, type RequestResponseLog } from '../../types'
 import { PluginAuthorLink } from '../plugin-author-link'
+// JsonBlock 与 formatJsonBody（已移入 lib/format）为共享实现，与 Log4 详情弹窗共用
+import { JsonBlock } from '../json-block'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -1400,6 +1403,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         <ScrollArea className='max-h-[calc(72dvh-9rem)] min-w-0 sm:max-h-[min(72dvh,660px)] sm:pr-4'>
           <ReqRespTabContent
             logId={props.log.id}
+            requestId={props.log.request_id}
             isAdmin={props.isAdmin}
             loadedLogId={reqRespLogId}
             data={reqRespData}
@@ -1420,10 +1424,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
   )
 }
 
-// ReqRespTabContent 请求/响应标签页内容：按日志 ID 拉取请求/响应完整内容
+// ReqRespTabContent 请求/响应标签页内容：拉取请求/响应完整内容。
+// 管理员按日志 ID 查询；普通用户的列表 id 是合成展示 id，必须携带真实
+// request_id 走 /self/request-response 端点（后端校验归属）。
 // loadedLogId/onLoaded 由父组件持有缓存状态，切换日志后自动重新拉取
 function ReqRespTabContent(props: {
   logId: number
+  requestId: string
   isAdmin: boolean
   loadedLogId: number | null
   data: RequestResponseLog | null
@@ -1443,9 +1450,23 @@ function ReqRespTabContent(props: {
 
   useEffect(() => {
     if (props.loadedLogId === props.logId) return
+    // 用户侧老数据可能缺少 request_id，此时无法安全定位记录
+    if (!props.isAdmin && !props.requestId) {
+      props.onLoaded(
+        props.logId,
+        null,
+        t('Failed to load request/response data')
+      )
+      return
+    }
     let cancelled = false
     setLoading(true)
-    getRequestResponseByLogId(props.logId, props.isAdmin)
+    // 管理员按日志 ID 查询；普通用户必须走 request_id 端点（合成 id 会错位）
+    const requestPromise =
+      !props.isAdmin && props.requestId
+        ? getSelfRequestResponseByRequestId(props.requestId)
+        : getRequestResponseByLogId(props.logId, props.isAdmin)
+    requestPromise
       .then((res) => {
         if (cancelled) return
         setLoading(false)
@@ -1574,108 +1595,6 @@ function ReqRespTabContent(props: {
           {t('Response Size')}: {(data.response_size / 1024).toFixed(1)} KB
         </div>
       )}
-    </div>
-  )
-}
-
-// formatJsonBody 格式化展示内容：优先按 JSON 美化（后端已将流式分片合并为单个响应对象）；
-// 兼容旧数据中仍为原始 SSE 报文的流式响应：逐条提取 data: 载荷的 JSON 后美化，保留 [DONE] 结束标记
-function formatJsonBody(content: string, isStream: boolean): string {
-  const firstLine = content
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line && !line.startsWith(':'))
-  const isRawSse =
-    !!firstLine &&
-    (firstLine.startsWith('data:') || firstLine.startsWith('event:'))
-  if (!(isStream && isRawSse)) {
-    try {
-      return JSON.stringify(JSON.parse(content), null, 2)
-    } catch {
-      return content
-    }
-  }
-  const out: string[] = []
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith(':')) continue
-    if (!trimmed.startsWith('data:')) {
-      out.push(trimmed)
-      continue
-    }
-    const payload = trimmed.slice(5).trim()
-    if (!payload) continue
-    if (payload === '[DONE]') {
-      out.push('data: [DONE]')
-      continue
-    }
-    try {
-      out.push(JSON.stringify(JSON.parse(payload), null, 2))
-    } catch {
-      out.push(trimmed)
-    }
-  }
-  return out.join('\n\n')
-}
-
-function JsonBlock({
-  label,
-  content,
-  copiedText,
-  copyToClipboard,
-}: {
-  label: string
-  content: string
-  copiedText: string | null
-  copyToClipboard: (text: string) => void
-}) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const maxPreviewLines = 50
-  const lines = content.split('\n')
-  const isLong = lines.length > maxPreviewLines
-
-  return (
-    <div className='space-y-1.5'>
-      <div className='flex items-center justify-between'>
-        <Label className='text-xs font-semibold'>{label}</Label>
-        <div className='flex items-center gap-1'>
-          {isLong && (
-            <Button
-              variant='ghost'
-              size='sm'
-              className='h-6 px-2 text-xs'
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? t('Collapse') : t('Expand')}
-            </Button>
-          )}
-          <Button
-            variant='ghost'
-            size='sm'
-            className='h-6 w-6 p-0'
-            onClick={() => copyToClipboard(content)}
-            title={t('Copy to clipboard')}
-            aria-label={t('Copy to clipboard')}
-          >
-            {copiedText === content ? (
-              <Check className='size-3.5 text-green-600' />
-            ) : (
-              <Copy className='size-3.5' />
-            )}
-          </Button>
-        </div>
-      </div>
-      <div className='bg-muted/30 relative overflow-hidden rounded-md border'>
-        <pre
-          className={cn(
-            'overflow-x-auto p-3 text-xs leading-relaxed whitespace-pre-wrap break-all',
-            !expanded && isLong && 'max-h-[300px]'
-          )}
-        >
-          {content}
-        </pre>
-      </div>
     </div>
   )
 }

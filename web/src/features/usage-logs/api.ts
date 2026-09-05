@@ -143,3 +143,23 @@ export async function getRequestResponseByLogId(
   const res = await api.get(path, taskArtifactRequestConfig)
   return res.data
 }
+
+/**
+ * Fetch the request/response body of a log owned by the current user.
+ *
+ * The /self log list returns synthetic display ids, so the real request_id
+ * field is the only reliable key; ownership is verified by the backend.
+ */
+export async function getSelfRequestResponseByRequestId(
+  requestId: string
+): Promise<{
+  success: boolean
+  message: string
+  data: RequestResponseLog | null
+}> {
+  const res = await api.get('/api/log/self/request-response', {
+    ...taskArtifactRequestConfig,
+    params: { request_id: requestId },
+  })
+  return res.data
+}
