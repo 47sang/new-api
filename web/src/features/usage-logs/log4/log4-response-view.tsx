@@ -92,8 +92,11 @@ export function Log4ResponseView(props: {
           <span className='text-muted-foreground'>{t('Model')}: </span>
           <span className='font-mono'>{props.log.model_name}</span>
         </span>
-        <span className='text-xs'>
-          <span className='text-muted-foreground'>{t('Cost')}: </span>
+        {/* inline-flex keeps the label and the quota badge on one line:
+            LogCostDisplay renders a block div, which would stack under the
+            label text inside a plain span. */}
+        <span className='inline-flex items-center gap-1 text-xs'>
+          <span className='text-muted-foreground'>{t('Cost')}:</span>
           <LogCostDisplay quota={props.log.quota} other={props.other} />
         </span>
         {props.data.status_code > 0 && (
