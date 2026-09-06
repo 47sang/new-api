@@ -24,6 +24,7 @@ services:
       - /Users/zhou/Desktop/ai-agent-lab/new-api-data/logs:/app/logs
     environment:
       - TZ=Asia/Shanghai
+      - PORT=3000 # 覆盖 .env 里的 PORT=3005,保证容器内监听端口与 ports 映射(3000:3000)一致
       # 覆盖 .env 里的 SQLITE_PATH（宿主机绝对路径在容器内无效），指向挂载卷 /data
       # 注意 SQLITE_PATH 是完整 DSN，必须带上默认的 pragma 参数（见 common/database.go）
       - SQLITE_PATH=/data/sqlite.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate
