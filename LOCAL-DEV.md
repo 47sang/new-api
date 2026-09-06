@@ -5,13 +5,14 @@
 
 ---
 
-## 📊 三种方案速查表
+## 📊 四种方案速查表
 
 | 场景 | 方案 | 命令入口 | 数据库 | 适用情况 |
 |---|---|---|---|---|
 | 🚫 **不想用 Docker** | 1 · 全本地双终端 | `go run` + `bun run dev` | SQLite | 轻量本地联调 |
 | 🔧 **改后端 Go 代码** | 2 · 本地 `go run` + SQLite | `go run main.go` | SQLite | 秒级重启，无外部依赖 |
 | 🎨 **改前端 / 前后端联调** | 3 · Docker 后端 + 本地前端 | `make dev-api` + `make dev-web` | PostgreSQL + Redis | 前端 HMR，最接近生产 |
+| 🚀 **正式部署运行** | 4 · Docker Compose 部署 | `docker build` + `docker compose up -d` | SQLite + Redis | 模拟正式版部署，开机自启 |
 
 ---
 
@@ -86,6 +87,33 @@ docker compose -f docker-compose.dev.yml down -v
 - `SESSION_COOKIE_SECURE=false` 已在 `docker-compose.dev.yml:35` 设好，别删，否则代理登录会话会失败。
 - Go 改动无热重载，必须 `make dev-api-rebuild`。
 - 数据卷：`dev_pg_data`（PostgreSQL）/ `dev_data`（应用数据）。
+
+---
+
+## 🚀 方案 4 · Docker Compose 正式部署（模拟正式版运行）
+
+用本地代码构建镜像，以正式版的方式常驻运行，开机自动启动。
+
+```bash
+# ① 构建本地镜像（含全部本地改动，前后端一起打包，需几分钟）
+docker build -t new-api:local .
+
+# ② 按编排启动（new-api + redis），参数经 env_file 从 .env 注入
+docker compose up -d
+# → http://localhost:3000
+
+# 验证
+curl -s http://localhost:3000/api/status   # 返回 "success":true 即正常
+```
+
+**更新部署的固定流程**：改完代码后重复 ①②，compose 会自动重建变更的容器，数据不受影响。
+
+**⚠️ 注意**：
+- 数据落点：SQLite 数据 → `/Users/zhou/Desktop/ai-agent-lab/new-api-data`（`sqlite.db` + `-wal` + `-shm` 三件套，勿手动删 `-wal`/`-shm`），运行日志 → `/Users/zhou/Desktop/ai-agent-lab/new-api-data/logs/`。
+- `SQLITE_PATH` 会被 compose `environment:` 覆盖为 `/data/sqlite.db?_pragma=...`（容器内路径），`.env` 里的宿主机路径仅供本地 `go run` 使用；自定义 DSN 时默认 pragma（WAL、busy_timeout、immediate）不能省。
+- `environment:` 优先级高于 `env_file`；改 `.env` 后须 `docker compose up -d` 重建容器才生效，`restart` 不重读参数。
+- 开机自启：Docker Desktop 设置勾选 "Start Docker Desktop when you sign in"，容器由 `restart: always` 自动拉起。
+- 停止：`docker compose down`（数据保留）；⚠️ 勿用 `down -v`——虽然 SQLite 走 bind mount 不受影响，但会养成误删卷的习惯。
 
 ---
 
