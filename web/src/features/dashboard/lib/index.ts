@@ -41,4 +41,26 @@ export {
   getFlowStages,
 } from './flow'
 export { safeDivide, calculateDashboardStats } from './stats'
+export {
+  USAGE_HEATMAP_DAYS,
+  USAGE_OTHER_COLOR,
+  USAGE_SERIES_MODEL_LIMIT,
+  USAGE_TOP_MODEL_LIMIT,
+  buildDailyModelSeries,
+  buildHeatmapGrid,
+  buildModelColors,
+  computeHeatmapLevels,
+  computeHeatmapStats,
+  computePeriodComparison,
+  computeTopModels,
+  summarizeMetric,
+  usageMetricValue,
+} from './usage'
+export type {
+  DailySeriesPoint,
+  HeatmapGrid,
+  HeatmapStats,
+  PeriodChange,
+  UsageModelRank,
+} from './usage'
 export { getPreviewText } from './text'

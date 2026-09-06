@@ -165,6 +165,23 @@ export interface ProcessedFlowData {
 }
 
 // ============================================================================
+// Usage Analytics Types (admin usage page)
+// ============================================================================
+
+// 页面全局指标：Token 用量 / 消费 / 请求数，全页模块联动
+export type UsageMetric = 'tokens' | 'spend' | 'requests'
+
+// GET /api/data/daily 返回行。created_at 为「本地日 0 点伪时间戳」（秒），
+// 减去请求时的 tz_offset 即为该日 0 点的真实 UTC 时刻
+export interface DailyUsageItem {
+  created_at: number
+  model_name?: string
+  token_used?: number
+  count?: number
+  quota?: number
+}
+
+// ============================================================================
 // Uptime Monitoring Types
 // ============================================================================
 

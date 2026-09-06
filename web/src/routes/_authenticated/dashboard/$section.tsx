@@ -23,6 +23,9 @@ import {
   DASHBOARD_SECTION_IDS,
   DASHBOARD_DEFAULT_SECTION,
 } from '@/features/dashboard/section-registry'
+import { isDashboardSectionAdminOnly } from '@/features/dashboard/section-visibility'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/_authenticated/dashboard/$section')({
   beforeLoad: ({ params }) => {
@@ -32,6 +35,16 @@ export const Route = createFileRoute('/_authenticated/dashboard/$section')({
         to: '/dashboard/$section',
         params: { section: DASHBOARD_DEFAULT_SECTION },
       })
+    }
+    // 仅管理员 section（用量分析/用户分析）对非管理员重定向到默认页
+    if (isDashboardSectionAdminOnly(params.section)) {
+      const { auth } = useAuthStore.getState()
+      if (!auth.user?.role || auth.user.role < ROLE.ADMIN) {
+        throw redirect({
+          to: '/dashboard/$section',
+          params: { section: DASHBOARD_DEFAULT_SECTION },
+        })
+      }
     }
   },
   component: Dashboard,

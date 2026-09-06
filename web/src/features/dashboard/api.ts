@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  DailyUsageItem,
   FlowQuotaDataItem,
   QuotaDataItem,
   UptimeGroupResult,
@@ -62,6 +63,24 @@ export async function getUserQuotaDataByUsers(params: {
   const res = await api.get<{ success: boolean; data: QuotaDataItem[] }>(
     '/api/data/users',
     { params }
+  )
+  return res.data
+}
+
+// 按天聚合的全站用量数据（仅管理员）。created_at 为「本地日 0 点伪时间戳」；
+// with_models=true 时按 (天, model_name) 聚合（跨度上限 190 天），否则仅按天（上限 400 天）
+export async function getDailyQuotaDates(
+  params: {
+    start_timestamp: number
+    end_timestamp: number
+    tz_offset: number
+    with_models?: boolean
+  },
+  signal?: AbortSignal
+) {
+  const res = await api.get<{ success: boolean; data: DailyUsageItem[] }>(
+    '/api/data/daily',
+    { params, signal }
   )
   return res.data
 }

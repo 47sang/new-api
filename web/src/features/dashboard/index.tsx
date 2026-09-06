@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -51,6 +51,7 @@ import {
   DASHBOARD_DEFAULT_SECTION,
   DASHBOARD_SECTION_IDS,
 } from './section-registry'
+import { isDashboardSectionAdminOnly } from './section-visibility'
 import type {
   DashboardChartPreferences,
   DashboardFilters,
@@ -104,6 +105,12 @@ const LazyPerformanceOverview = lazy(() =>
 const LazyUserCharts = lazy(() =>
   import('./components/users/user-charts').then((m) => ({
     default: m.UserCharts,
+  }))
+)
+
+const LazyUsageDashboard = lazy(() =>
+  import('./components/usage/usage-dashboard').then((m) => ({
+    default: m.UsageDashboard,
   }))
 )
 
@@ -183,6 +190,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   models: {
     titleKey: 'Model Call Analytics',
   },
+  usage: {
+    titleKey: 'Usage Analytics',
+  },
   flow: {
     titleKey: 'Flow',
   },
@@ -245,10 +255,21 @@ export function Dashboard() {
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  // 非管理员直接访问仅管理员的 section 时重定向到默认页（路由守卫之外的双保险）
+  useEffect(() => {
+    if (!isAdmin && isDashboardSectionAdminOnly(activeSection)) {
+      navigate({
+        to: '/dashboard/$section',
+        params: { section: DASHBOARD_DEFAULT_SECTION },
+      })
+    }
+  }, [isAdmin, activeSection, navigate])
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (!isDashboardSectionAdminOnly(section) || isAdmin)
       ),
     [isAdmin]
   )
@@ -397,6 +418,13 @@ export function Dashboard() {
                   filters={userChartsFilters}
                   onFiltersChange={setUserChartsFilters}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'usage' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyUsageDashboard />
               </Suspense>
             </FadeIn>
           )}

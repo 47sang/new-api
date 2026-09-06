@@ -20,6 +20,8 @@ import type { TFunction } from 'i18next'
 
 import { createSectionRegistry } from '@/features/system-settings/utils/section-registry'
 
+import { ADMIN_ONLY_SECTIONS } from './section-visibility'
+
 /**
  * Dashboard page section definitions
  */
@@ -32,6 +34,12 @@ const DASHBOARD_SECTIONS = [
   {
     id: 'models',
     titleKey: 'Model Call Analytics',
+    build: () => null,
+  },
+  {
+    id: 'usage',
+    titleKey: 'Usage Analytics',
+    adminOnly: true,
     build: () => null,
   },
   {
@@ -48,8 +56,6 @@ const DASHBOARD_SECTIONS = [
 ] as const
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
-
-const ADMIN_ONLY_SECTIONS = new Set<string>(['users'])
 
 const dashboardRegistry = createSectionRegistry<
   DashboardSectionId,

@@ -160,6 +160,35 @@ func GetQuotaDataByUserId(userId int, startTime int64, endTime int64) (quotaData
 	return quotaDatas, err
 }
 
+// GetQuotaDataDaily 按天聚合 quota_data 统计数据，供管理员用量分析页使用。
+// 参数:
+//   - startTime/endTime: 秒级时间戳闭区间 [startTime, endTime]
+//   - tzOffsetSec: 客户端时区偏移（秒，如 UTC+8 为 28800）。调用方必须已将其
+//     钳制在 ±50400 范围内。天边界按 (created_at + tzOffsetSec) 对齐到 86400，
+//     返回的 created_at 是「本地日 0 点伪时间戳」，调用方用
+//     created_at - tzOffsetSec 还原真实时刻。
+//   - groupByModel: true 时按 (天, model_name) 聚合，false 时仅按天聚合。
+//
+// 返回: 聚合后的 QuotaData 切片（count/quota/token_used 为当天求和值）。
+// 天边界仅用整数加法与取模表达，兼容 SQLite/MySQL/PostgreSQL。
+func GetQuotaDataDaily(startTime int64, endTime int64, tzOffsetSec int64, groupByModel bool) ([]*QuotaData, error) {
+	// tzOffsetSec 是已校验的整数，内联进表达式；GORM 的 Group 不支持占位参数
+	dayExpr := fmt.Sprintf("((created_at + %d) - ((created_at + %d) %% 86400))", tzOffsetSec, tzOffsetSec)
+	selectCols := dayExpr + " as created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used"
+	groupCols := dayExpr
+	if groupByModel {
+		selectCols = dayExpr + " as created_at, model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used"
+		groupCols += ", model_name"
+	}
+	var quotaDatas []*QuotaData
+	err := DB.Table("quota_data").
+		Select(selectCols).
+		Where("created_at >= ? and created_at <= ?", startTime, endTime).
+		Group(groupCols).
+		Find(&quotaDatas).Error
+	return quotaDatas, err
+}
+
 func GetQuotaDataGroupByUser(startTime int64, endTime int64) (quotaData []*QuotaData, err error) {
 	var quotaDatas []*QuotaData
 	err = DB.Table("quota_data").

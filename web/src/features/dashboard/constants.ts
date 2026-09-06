@@ -55,6 +55,29 @@ export const CONSUMPTION_DISTRIBUTION_CHART_OPTIONS = [
   { value: 'area', labelKey: 'Area Chart' },
 ] as const
 
+// 用量分析页（管理员）全局指标切换项，全页模块跟随联动
+export const USAGE_METRIC_OPTIONS = [
+  { value: 'tokens', labelKey: 'Tokens' },
+  { value: 'spend', labelKey: 'Spend' },
+  { value: 'requests', labelKey: 'Requests' },
+] as const
+
+// 用量分析页时间范围预设（天）
+export const USAGE_TIME_RANGE_OPTIONS = [
+  { value: 7, labelKey: 'Last 7 Days' },
+  { value: 30, labelKey: 'Last 30 Days' },
+  { value: 90, labelKey: 'Last 90 Days' },
+] as const
+
+// 热力图 5 档格子颜色：0 空档 + 4 深浅档
+export const USAGE_HEATMAP_LEVEL_CLASSES = [
+  'bg-muted',
+  'bg-chart-1/35',
+  'bg-chart-1/60',
+  'bg-chart-1/85',
+  'bg-chart-1',
+] as const
+
 export const MODEL_ANALYTICS_CHART_OPTIONS = [
   { value: 'trend', labelKey: 'Call Trend' },
   { value: 'proportion', labelKey: 'Call Count Distribution' },

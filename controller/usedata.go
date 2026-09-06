@@ -85,6 +85,50 @@ func GetUserQuotaDates(c *gin.Context) {
 	return
 }
 
+func GetDailyQuotaDates(c *gin.Context) {
+	startTimestamp, err := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	if err != nil || startTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid start_timestamp")
+		return
+	}
+	endTimestamp, err := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if err != nil || endTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid end_timestamp")
+		return
+	}
+	if endTimestamp < startTimestamp {
+		common.ApiErrorMsg(c, "invalid time range")
+		return
+	}
+	tzOffset, err := strconv.ParseInt(c.Query("tz_offset"), 10, 64)
+	if err != nil {
+		tzOffset = 0
+	}
+	if tzOffset < -50400 || tzOffset > 50400 {
+		common.ApiErrorMsg(c, "invalid tz_offset")
+		return
+	}
+	withModels := c.Query("with_models") == "true"
+	maxSpan := int64(400) * 86400
+	if withModels {
+		maxSpan = int64(190) * 86400
+	}
+	if endTimestamp-startTimestamp > maxSpan {
+		common.ApiErrorMsg(c, "时间跨度超过允许范围")
+		return
+	}
+	dates, err := model.GetQuotaDataDaily(startTimestamp, endTimestamp, tzOffset, withModels)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    dates,
+	})
+}
+
 func GetAllFlowQuotaDates(c *gin.Context) {
 	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
 	if !ok {

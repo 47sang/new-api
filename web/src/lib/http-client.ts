@@ -128,6 +128,8 @@ api.interceptors.response.use(
       } else if (!skipErrorHandler) {
         toast.error(t('Session expired!'))
       }
+    } else if (axios.isCancel(error)) {
+      // 请求被取消（组件卸载 / React Query 信号中断），属正常流程，静默不弹 toast
     } else if (!skipErrorHandler) {
       const messageKey = getServerErrorMessageKey(error)
       const message = messageKey
