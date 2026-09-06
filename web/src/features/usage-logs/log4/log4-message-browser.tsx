@@ -46,7 +46,12 @@ import {
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
-import { messagePreview, type ParsedMessage } from './request-body'
+import { Log4ImageGallery } from './log4-image-viewer'
+import {
+  messagePreview,
+  extractMessageImages,
+  type ParsedMessage,
+} from './request-body'
 import { RoleBadge } from './role-badge'
 import { LOG4_ROLE_META } from './role-meta'
 
@@ -114,6 +119,10 @@ function SelectedMessageContent(props: { message: ParsedMessage }) {
     return parts.filter(Boolean).join('\n\n')
   }, [message])
 
+  // Renderable images (data URIs / http urls) extracted from the raw blocks;
+  // imageCount may be higher when only non-renderable references exist.
+  const images = useMemo(() => extractMessageImages(message.raw), [message])
+
   return (
     <div className='flex h-full min-h-0 flex-col'>
       <div className='flex shrink-0 flex-wrap items-center gap-1.5 pb-2'>
@@ -151,11 +160,7 @@ function SelectedMessageContent(props: { message: ParsedMessage }) {
           </pre>
         ) : (
           <div className='space-y-2'>
-            {message.imageCount ? (
-              <span className='text-muted-foreground bg-muted inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px]'>
-                {t('{{count}} images', { count: message.imageCount })}
-              </span>
-            ) : null}
+            <Log4ImageGallery images={images} totalCount={message.imageCount} />
             {message.text ? (
               <pre className='text-xs leading-relaxed break-all whitespace-pre-wrap'>
                 {message.text}

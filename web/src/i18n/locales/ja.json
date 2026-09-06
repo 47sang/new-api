@@ -5620,6 +5620,9 @@
     "Oct": "Oct",
     "Nov": "Nov",
     "Dec": "Dec",
-    "Activity": "Activity"
+    "Activity": "Activity",
+    "Open image {{index}} of {{total}}": "画像 {{index}} / {{total}} を開く",
+    "Previous image": "前の画像",
+    "Next image": "次の画像"
   }
 }

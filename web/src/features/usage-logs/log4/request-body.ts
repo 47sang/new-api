@@ -142,6 +142,107 @@ function accumulateContent(content: unknown, acc: ContentAccumulator): void {
   }
 }
 
+/** One renderable image found inside a message's raw content blocks. */
+export interface ParsedMessageImage {
+  /**
+   * Directly embeddable URL: a `data:image/...;base64,...` URI for base64
+   * payloads, or an http(s) URL. Non-renderable references (OpenAI file_id,
+   * Gemini fileUri) are never collected.
+   */
+  url: string
+  /** Declared MIME type (Claude/Gemini payloads only). */
+  mediaType?: string
+}
+
+/** Guard against pathological nesting in stored bodies. */
+const MAX_IMAGE_WALK_DEPTH = 8
+
+function collectImage(
+  images: ParsedMessageImage[],
+  url: unknown,
+  mediaType?: string
+): void {
+  if (typeof url !== 'string') return
+  if (
+    !url.startsWith('data:image/') &&
+    !url.startsWith('http://') &&
+    !url.startsWith('https://')
+  ) {
+    return
+  }
+  if (mediaType) {
+    images.push({ url, mediaType })
+  } else {
+    images.push({ url })
+  }
+}
+
+/**
+ * Collect the renderable images of one parsed message by walking its raw
+ * provider object. Understands every image shape the parsers count in
+ * imageCount — OpenAI chat `image_url` parts (object or bare string),
+ * Responses `input_image`, Claude `image` blocks (base64 source becomes a
+ * data URI, url source passes through) and Gemini `inlineData`/
+ * `inline_data` parts — and recurses into nested containers such as Claude
+ * `tool_result` content. References that cannot be rendered in an
+ * <img> (file ids, Gemini fileUri) are skipped, so the result may be
+ * shorter than imageCount.
+ *
+ * @param raw - The message's provider-specific object (ParsedMessage.raw)
+ * @returns Images in document order; empty when the message has none
+ */
+export function extractMessageImages(raw: unknown): ParsedMessageImage[] {
+  const images: ParsedMessageImage[] = []
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > MAX_IMAGE_WALK_DEPTH || value == null) return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1)
+      return
+    }
+    if (typeof value !== 'object') return
+    const record = value as UnknownRecord
+    const type = asString(record.type)
+    if (type === 'image_url' || type === 'input_image') {
+      // OpenAI chat parts wrap the URL in an object; Responses input_image
+      // carries it as a plain string.
+      const container = asRecord(record.image_url)
+      collectImage(images, container ? container.url : record.image_url)
+      return
+    }
+    if (type === 'image') {
+      const source = asRecord(record.source)
+      if (!source) return
+      if (asString(source.type) === 'base64') {
+        const mediaType = asString(source.media_type) || 'image/png'
+        collectImage(
+          images,
+          `data:${mediaType};base64,${asString(source.data)}`,
+          mediaType
+        )
+      } else {
+        collectImage(images, source.url)
+      }
+      return
+    }
+    const inline = asRecord(record.inlineData) ?? asRecord(record.inline_data)
+    if (inline) {
+      const mediaType =
+        asString(inline.mimeType) || asString(inline.mime_type) || 'image/png'
+      collectImage(
+        images,
+        `data:${mediaType};base64,${asString(inline.data)}`,
+        mediaType
+      )
+      return
+    }
+    for (const key of Object.keys(record)) {
+      visit(record[key], depth + 1)
+    }
+  }
+  visit(raw, 0)
+  return images
+}
+
 function formatToolArguments(value: unknown): string {
   if (typeof value === 'string' && value) return value
   if (value == null) return ''

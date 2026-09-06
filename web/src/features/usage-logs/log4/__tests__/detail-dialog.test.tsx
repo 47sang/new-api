@@ -355,4 +355,73 @@ describe('Log4DetailDialog', () => {
     )
     expect(mockedSelfFetch).not.toHaveBeenCalled()
   })
+
+  test('previews base64 message images from the input pane thumbnails', async () => {
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: JSON.stringify({
+          model: 'claude-sonnet-4',
+          system: 'you are helpful',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'What is in this picture?' },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: 'AAAA',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+        response_body: OPENAI_RESPONSE_BODY,
+        is_stream: false,
+        is_completed: true,
+        response_size: 300,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    const user = userEvent.setup()
+    renderDialog({ log: buildLog({}), isAdmin: true })
+
+    // The system turn is selected first; select the user turn that carries
+    // the image before looking for the thumbnail.
+    await waitFor(() => {
+      expect(
+        screen.getAllByText((_, el) =>
+          Boolean(el?.textContent?.includes('2 messages'))
+        ).length
+      ).toBeGreaterThan(0)
+    })
+    await user.click(screen.getAllByText('What is in this picture?')[0])
+
+    // The parsed image shows up as a clickable thumbnail in the detail pane
+    const thumbnail = await screen.findByRole('button', {
+      name: 'Open image 1 of 1',
+    })
+    await user.click(thumbnail)
+
+    // The fullscreen preview opens on top of the detail dialog and shows
+    // the decoded data URI
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'Image Preview' })
+      ).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+    })
+
+    // Escape closes only the preview; the detail pane keeps its thumbnail
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(screen.queryByRole('img', { name: 'Image Preview' })).toBeNull()
+    })
+    expect(thumbnail).toBeInTheDocument()
+  })
 })

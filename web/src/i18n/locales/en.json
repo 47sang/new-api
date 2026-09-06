@@ -5620,6 +5620,9 @@
     "Oct": "Oct",
     "Nov": "Nov",
     "Dec": "Dec",
-    "Activity": "Activity"
+    "Activity": "Activity",
+    "Open image {{index}} of {{total}}": "Open image {{index}} of {{total}}",
+    "Previous image": "Previous image",
+    "Next image": "Next image"
   }
 }

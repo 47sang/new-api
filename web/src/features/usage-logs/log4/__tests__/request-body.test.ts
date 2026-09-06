@@ -20,6 +20,7 @@ import { describe, expect, test } from 'vitest'
 
 import {
   estimateMessageTokens,
+  extractMessageImages,
   parseRequestBody,
   parseResponseBody,
 } from '../request-body'
@@ -514,5 +515,114 @@ describe('estimateMessageTokens', () => {
     })
     // 400 + 10 + 6 chars -> ceil(416 / 4)
     expect(tokens).toBe(104)
+  })
+})
+
+describe('extractMessageImages', () => {
+  test('builds data URIs from Claude base64 sources and passes url sources through', () => {
+    const raw = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look' },
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: 'AAAA',
+          },
+        },
+        {
+          type: 'image',
+          source: { type: 'url', url: 'https://x/y.png' },
+        },
+      ],
+    }
+    expect(extractMessageImages(raw)).toEqual([
+      { url: 'data:image/png;base64,AAAA', mediaType: 'image/png' },
+      { url: 'https://x/y.png' },
+    ])
+  })
+
+  test('collects OpenAI image_url objects and Responses input_image strings', () => {
+    const chatPart = {
+      content: [
+        { type: 'image_url', image_url: { url: 'https://x/chat.png' } },
+      ],
+    }
+    const responsesItem = {
+      content: [
+        { type: 'input_image', image_url: 'data:image/jpeg;base64,BBBB' },
+      ],
+    }
+    expect(extractMessageImages(chatPart)).toEqual([
+      { url: 'https://x/chat.png' },
+    ])
+    expect(extractMessageImages(responsesItem)).toEqual([
+      { url: 'data:image/jpeg;base64,BBBB' },
+    ])
+  })
+
+  test('builds data URIs from Gemini inlineData parts and skips fileData', () => {
+    const raw = {
+      parts: [
+        { inlineData: { mimeType: 'image/webp', data: 'CCCC' } },
+        { inline_data: { mime_type: 'image/gif', data: 'DDDD' } },
+        {
+          fileData: {
+            fileUri: 'https://generativelanguage.googleapis.com/f/1',
+          },
+        },
+      ],
+    }
+    expect(extractMessageImages(raw)).toEqual([
+      { url: 'data:image/webp;base64,CCCC', mediaType: 'image/webp' },
+      { url: 'data:image/gif;base64,DDDD', mediaType: 'image/gif' },
+    ])
+  })
+
+  test('finds images nested inside Claude tool_result content', () => {
+    const raw = {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call_1',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: 'EEEE' },
+            },
+          ],
+        },
+      ],
+    }
+    expect(extractMessageImages(raw)).toEqual([
+      { url: 'data:image/png;base64,EEEE', mediaType: 'image/png' },
+    ])
+  })
+
+  test('skips non-renderable references and non-image payloads', () => {
+    const raw = {
+      content: [
+        { type: 'image_file', image_file: { file_id: 'file-1' } },
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: 'FFFF',
+          },
+        },
+        { type: 'text', text: 'plain' },
+      ],
+    }
+    expect(extractMessageImages(raw)).toEqual([])
+  })
+
+  test('returns an empty list for null, plain text and empty messages', () => {
+    expect(extractMessageImages(null)).toEqual([])
+    expect(extractMessageImages('hello')).toEqual([])
+    expect(extractMessageImages({ content: 'plain text only' })).toEqual([])
   })
 })

@@ -5620,6 +5620,9 @@
     "Oct": "Oct",
     "Nov": "Nov",
     "Dec": "Dec",
-    "Activity": "Activity"
+    "Activity": "Activity",
+    "Open image {{index}} of {{total}}": "開啟第 {{index}} 張圖片（共 {{total}} 張）",
+    "Previous image": "上一張圖片",
+    "Next image": "下一張圖片"
   }
 }
