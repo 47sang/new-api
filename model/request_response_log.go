@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -115,6 +116,24 @@ func CleanupOldRequestResponseLogs(retentionDays int) (int64, error) {
 	cutoffTimestamp := time.Now().AddDate(0, 0, -retentionDays).Unix()
 	result := LOG_DB.Where("created_at < ?", cutoffTimestamp).Delete(&RequestResponseLog{})
 	return result.RowsAffected, result.Error
+}
+
+// DeleteOldRequestResponseLogBatch 分批删除指定时间戳之前创建的请求/响应日志，
+// 供手动清理历史日志的系统任务联动调用：logs 表与 request_response_logs 仅靠
+// request_id 逻辑关联、无外键级联，清理 logs 时若不同步删除会留下孤儿大文本。
+// 两表 created_at 同源（均为请求时刻），按同一目标时间戳删除即可联动。
+func DeleteOldRequestResponseLogBatch(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	result := LOG_DB.WithContext(ctx).Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&RequestResponseLog{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 // StartRequestResponseLogCleanup 启动定期清理过期请求/响应日志的 goroutine（常驻）

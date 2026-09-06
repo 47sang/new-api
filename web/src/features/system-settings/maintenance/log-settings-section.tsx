@@ -243,11 +243,18 @@ export function LogSettingsSection({
           if (res.data.status === 'succeeded') {
             const count =
               res.data.result?.deleted_count ?? res.data.state?.processed ?? 0
-            toast.success(
-              count > 0
-                ? t('{{count}} log entries removed.', { count })
-                : t('No log entries matched the selected time.')
-            )
+            const responseCount =
+              res.data.result?.deleted_request_response_count ?? 0
+            if (count > 0 || responseCount > 0) {
+              toast.success(
+                t(
+                  '{{count}} log entries and {{responseCount}} request/response records removed.',
+                  { count, responseCount }
+                )
+              )
+            } else {
+              toast.success(t('No log entries matched the selected time.'))
+            }
           } else if (res.data.status === 'failed') {
             toast.error(res.data.error || t('Failed to clean logs'))
           }
@@ -635,6 +642,9 @@ export function LogSettingsSection({
                 : t(
                     'This will permanently remove log entries before the selected timestamp.'
                   )}{' '}
+              {t(
+                'Request/response details for the removed entries will be deleted as well.'
+              )}{' '}
               {t('This action cannot be undone.')}
             </AlertDialogDescription>
           </AlertDialogHeader>

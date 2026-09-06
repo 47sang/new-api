@@ -101,6 +101,8 @@ type LogCleanupState struct {
 
 type LogCleanupResult struct {
 	DeletedCount int64 `json:"deleted_count"`
+	// DeletedRequestResponseCount 联动清理的 request_response_logs 行数
+	DeletedRequestResponseCount int64 `json:"deleted_request_response_count"`
 }
 
 var (
@@ -419,7 +421,27 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		return
 	}
 
-	result := LogCleanupResult{DeletedCount: state.Processed}
+	// 联动清理 request_response_logs：功能开启且日志库非 ClickHouse 时该表才存在
+	// （ClickHouse 日志库下功能被强制禁用）。按同一目标时间戳删除，存量孤儿数据一并清除。
+	deletedRequestResponseCount := int64(0)
+	if common.RequestResponseLogEnabled {
+		for {
+			rowsAffected, err := model.DeleteOldRequestResponseLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
+			if err != nil {
+				failSystemTask(task, runnerID, err)
+				return
+			}
+			if rowsAffected == 0 {
+				break
+			}
+			deletedRequestResponseCount += rowsAffected
+		}
+	}
+
+	result := LogCleanupResult{
+		DeletedCount:                state.Processed,
+		DeletedRequestResponseCount: deletedRequestResponseCount,
+	}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
 		logSystemTaskLockError(ctx, task, err)
 	}

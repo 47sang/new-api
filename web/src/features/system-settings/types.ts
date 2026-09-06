@@ -86,6 +86,7 @@ export type LogCleanupTaskState = {
 
 export type LogCleanupTaskResult = {
   deleted_count: number
+  deleted_request_response_count: number
 }
 
 export type LogCleanupTask = SystemTask<
