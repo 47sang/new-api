@@ -438,6 +438,12 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		}
 	}
 
+	// SQLite 日志库的文件不会因 DELETE 自动收缩(释放页滞留 freelist),清理完成后
+	// 执行 VACUUM 归还磁盘空间;失败只告警,不影响已完成的清理结果。
+	if _, err := model.VacuumLogDatabase(ctx); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("system task %s log db vacuum failed: %v", task.TaskID, err))
+	}
+
 	result := LogCleanupResult{
 		DeletedCount:                state.Processed,
 		DeletedRequestResponseCount: deletedRequestResponseCount,

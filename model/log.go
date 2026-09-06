@@ -747,3 +747,29 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 	}
 	return result.RowsAffected, nil
 }
+
+// VacuumLogDatabase 对 SQLite 日志库执行 VACUUM,把删除数据后滞留在文件中的空闲页
+// 真正归还操作系统:SQLite 的 DELETE 只把释放页挪进 freelist 供复用,数据库文件并不
+// 会自动收缩,因此清理日志后文件大小不变。MySQL/PostgreSQL/ClickHouse 的空间由数据
+// 库自身机制管理,重组语句(OPTIMIZE TABLE / VACUUM FULL)会长时间锁表,不宜自动触发,
+// 非 SQLite 日志库直接跳过并返回 false。
+// 返回是否实际执行了 VACUUM,供调用方区分"已执行"与"方言不适用"。
+func VacuumLogDatabase(ctx context.Context) (bool, error) {
+	if !common.UsingLogDatabase(common.DatabaseTypeSQLite) {
+		return false, nil
+	}
+
+	// 页大小/页数仅用于计算回收量,读取失败只影响日志里的 MB 数,不阻塞 VACUUM
+	var pageSize, pagesBefore, pagesAfter int64
+	readPageSize := LOG_DB.Raw("PRAGMA page_size").Scan(&pageSize).Error == nil
+	readPagesBefore := LOG_DB.Raw("PRAGMA page_count").Scan(&pagesBefore).Error == nil
+
+	if err := LOG_DB.WithContext(ctx).Exec("VACUUM").Error; err != nil {
+		return false, err
+	}
+
+	if readPageSize && readPagesBefore && LOG_DB.Raw("PRAGMA page_count").Scan(&pagesAfter).Error == nil && pagesAfter < pagesBefore {
+		common.SysLog(fmt.Sprintf("log database vacuum completed, reclaimed %.2f MB", float64((pagesBefore-pagesAfter)*pageSize)/1024/1024))
+	}
+	return true, nil
+}
