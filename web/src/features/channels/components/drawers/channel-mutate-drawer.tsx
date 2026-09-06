@@ -54,6 +54,7 @@ import {
 import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { z } from 'zod'
 
 import {
   sideDrawerContentClassName,
@@ -160,6 +161,7 @@ import {
   channelsQueryKeys,
   getAdvancedCustomStats,
   transformChannelToFormDefaults,
+  validateKeyLineBreaks,
   type ChannelFormValues,
   deduplicateKeys,
   getChannelTypeIcon,
@@ -720,8 +722,29 @@ export function ChannelMutateDrawer({
     isEditing && channelData?.data?.channel_info?.is_multi_key === true
 
   // Form setup
+  // 单密钥场景下密钥出现多行属于无效输入（后端不会因多行密钥自动升级为多密钥渠道，
+  // 整串密钥会原样发往上游导致认证失败），这里叠加运行时校验阻止保存。
+  const formSchema = useMemo(
+    () =>
+      channelFormSchema.superRefine((data, ctx) => {
+        const message = validateKeyLineBreaks(data.key, {
+          isEditing,
+          isMultiKeyChannel,
+          addMode: data.multi_key_mode,
+        })
+        if (message) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['key'],
+            message,
+          })
+        }
+      }),
+    [isEditing, isMultiKeyChannel]
+  )
+
   const form = useForm<ChannelFormValues>({
-    resolver: zodResolver(channelFormSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: CHANNEL_FORM_DEFAULT_VALUES,
   })
 
@@ -866,6 +889,11 @@ export function ChannelMutateDrawer({
   const isChannelDetailLoading = isEditing && isChannelLoading
   const supportsMultiKeyAddMode =
     currentType !== 57 && !(currentType === 41 && vertexKeyType === 'api_key')
+  // 多密钥策略选择器的展示时机：编辑多密钥渠道（可事后调整 random/polling），
+  // 或创建时选择了「多密钥模式」添加选项。
+  const showMultiKeyStrategy =
+    (isEditing && isMultiKeyChannel) ||
+    (!isEditing && multiKeyMode === 'multi_to_single')
   const addModeOptions = useMemo(
     () =>
       supportsMultiKeyAddMode
@@ -3277,66 +3305,65 @@ export function ChannelMutateDrawer({
                                 />
                               )}
 
-                              {!isEditing &&
-                                multiKeyMode === 'multi_to_single' && (
-                                  <FormField
-                                    control={form.control}
-                                    name='multi_key_type'
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <FormLabel>
-                                          {t('Multi-Key Strategy')}
-                                        </FormLabel>
-                                        <Select
-                                          items={[
-                                            {
-                                              value: 'random',
-                                              label: t('Random'),
-                                            },
-                                            {
-                                              value: 'polling',
-                                              label: t('Polling'),
-                                            },
-                                          ]}
-                                          onValueChange={field.onChange}
-                                          value={field.value}
+                              {showMultiKeyStrategy && (
+                                <FormField
+                                  control={form.control}
+                                  name='multi_key_type'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Multi-Key Strategy')}
+                                      </FormLabel>
+                                      <Select
+                                        items={[
+                                          {
+                                            value: 'random',
+                                            label: t('Random'),
+                                          },
+                                          {
+                                            value: 'polling',
+                                            label: t('Polling'),
+                                          },
+                                        ]}
+                                        onValueChange={field.onChange}
+                                        value={field.value}
+                                      >
+                                        <FormControl>
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent
+                                          alignItemWithTrigger={false}
                                         >
-                                          <FormControl>
-                                            <SelectTrigger>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                          </FormControl>
-                                          <SelectContent
-                                            alignItemWithTrigger={false}
-                                          >
-                                            <SelectGroup>
-                                              <SelectItem value='random'>
-                                                {t('Random')}
-                                              </SelectItem>
-                                              <SelectItem value='polling'>
-                                                {t('Polling')}
-                                              </SelectItem>
-                                            </SelectGroup>
-                                          </SelectContent>
-                                        </Select>
-                                        <FormDescription>
-                                          {multiKeyType === 'polling' ? (
-                                            <span className='text-warning'>
-                                              {t(
-                                                'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
-                                              )}
-                                            </span>
-                                          ) : (
-                                            t(
-                                              'Randomly select a key from the pool for each request'
-                                            )
+                                          <SelectGroup>
+                                            <SelectItem value='random'>
+                                              {t('Random')}
+                                            </SelectItem>
+                                            <SelectItem value='polling'>
+                                              {t('Polling')}
+                                            </SelectItem>
+                                          </SelectGroup>
+                                        </SelectContent>
+                                      </Select>
+                                      <FormDescription>
+                                        {multiKeyType === 'polling' && (
+                                          <span className='text-warning'>
+                                            {t(
+                                              'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
+                                            )}
+                                          </span>
+                                        )}
+                                        {multiKeyType === 'random' &&
+                                          t(
+                                            'Randomly select a key from the pool for each request'
                                           )}
-                                        </FormDescription>
-                                        <FormMessage />
-                                      </FormItem>
-                                    )}
-                                  />
-                                )}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
                             </ChannelAuthSection>
                           </fieldset>
                         </div>

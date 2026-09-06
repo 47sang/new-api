@@ -4496,6 +4496,7 @@
     "Simple": "簡潔",
     "Simple mode only returns message; status code and error type use system defaults.": "簡潔模式僅回傳 message；狀態碼和錯誤類型將使用系統預設值。",
     "Simple mode: prune objects by type, e.g. redacted_thinking.": "簡潔模式：按 type 全量清理物件，例如 redacted_thinking。",
+    "Single-key channels accept only one key (one line). To store multiple keys, create a channel using the \"Multi-Key Mode\" add option.": "單金鑰渠道只能填寫一個金鑰（僅一行）。如需儲存多個金鑰，請新建渠道並選擇「多金鑰模式（多金鑰，一個渠道）」新增模式。",
     "Single Key": "單金鑰",
     "Site & Branding": "站點與品牌",
     "Site Key": "站點金鑰",

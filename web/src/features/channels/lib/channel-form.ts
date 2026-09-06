@@ -588,7 +588,9 @@ export function transformChannelToFormDefaults(
     settings: channel.settings || '{}',
     other: channel.other || '',
     multi_key_mode: 'single',
-    multi_key_type: channel.channel_info.multi_key_mode || 'random',
+    // 保持库中真实值（可能为空=未设置）：回填成 random 会让用户在无感知的情况下
+    // 于保存时把「取第一个可用密钥」的默认行为静默改写为随机策略
+    multi_key_type: channel.channel_info.multi_key_mode || undefined,
     batch_add_set_key_prefix_2_name: false,
     key_mode: 'append', // Default to append mode for editing multi-key channels
     // Channel extra settings
@@ -787,6 +789,46 @@ function normalizeBaseUrl(value: string | undefined): string {
   return String(value || '')
     .trim()
     .replace(/\/+$/, '')
+}
+
+// Error message doubles as the i18n key rendered by FormMessage (t(body)).
+export const MULTI_LINE_KEY_ERROR =
+  'Single-key channels accept only one key (one line). To store multiple keys, create a channel using the "Multi-Key Mode" add option.'
+
+/**
+ * Validate that a multi-line key is only entered where the backend can handle it.
+ * 业务背景：后端 UpdateChannel 始终沿用数据库中的 channel_info（不会因密钥变多行而把渠道
+ * 升级为多密钥），单密钥渠道保存多行密钥后整串进入上游认证头，所有请求都会失败。
+ * 因此仅允许在「创建时选择批量/多密钥模式」或「编辑多密钥渠道」时输入多行密钥。
+ * 豁免规则：JSON 对象凭证（Codex、Vertex AI 单个服务账号）本身可合法换行，恒放行；
+ * JSON 数组（多个凭证）只在多行本就合法的场景放行——单密钥场景下后端会把它整串当
+ * 单个凭证发往上游（Vertex AI 适配器按单对象解析），必须拒绝。
+ *
+ * @param key 表单中的密钥原文
+ * @param options.isEditing 是否处于编辑已有渠道
+ * @param options.isMultiKeyChannel 编辑目标是否为多密钥渠道（channel_info.is_multi_key）
+ * @param options.addMode 创建时的添加模式（single | batch | multi_to_single）
+ * @returns 校验失败时返回 i18n 错误文案（同时作为翻译键），通过时返回 null
+ */
+export function validateKeyLineBreaks(
+  key: string | undefined,
+  options: {
+    isEditing: boolean
+    isMultiKeyChannel: boolean
+    addMode?: 'single' | 'batch' | 'multi_to_single'
+  }
+): string | null {
+  const trimmed = key?.trim() ?? ''
+  if (!trimmed || !trimmed.includes('\n')) return null
+  // JSON 对象凭证（Codex、Vertex AI 单个服务账号）本身可合法换行，恒放行
+  if (trimmed.startsWith('{')) return null
+  const multiLineAllowed = options.isEditing
+    ? options.isMultiKeyChannel
+    : (options.addMode ?? 'single') !== 'single'
+  // JSON 数组（多个凭证）不在豁免之列：single 场景下后端会把它整串当
+  // 单个凭证发往上游（Vertex AI 适配器按单对象解析），必须拒绝
+  if (!multiLineAllowed) return MULTI_LINE_KEY_ERROR
+  return null
 }
 
 /**

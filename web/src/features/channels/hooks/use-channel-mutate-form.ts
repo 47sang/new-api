@@ -114,10 +114,19 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
                 key_mode: data.key_mode,
               }
             : payload
+        // 多密钥策略（random/polling）必须走顶层 multi_key_mode 字段：
+        // 后端 UpdateChannel 会用库中的 channel_info 覆盖请求体里的 channel_info，
+        // 只有顶层 multi_key_mode 会被采纳（且仅对多密钥渠道有意义）。
+        // 不像 key_mode，策略切换不是敏感操作（多密钥管理弹窗也只读展示该策略），
+        // 故不要求 canEditSensitive；表单未设置策略时为 undefined，不会发送该字段。
+        const payloadWithMultiKeyMode =
+          props.isMultiKeyChannel && data.multi_key_type
+            ? { ...payloadWithKeyMode, multi_key_mode: data.multi_key_type }
+            : payloadWithKeyMode
 
         const response = await updateChannel(
           props.currentRow.id,
-          payloadWithKeyMode
+          payloadWithMultiKeyMode
         )
         if (!response.success) {
           throw new Error(response.message || t(ERROR_MESSAGES.UPDATE_FAILED))

@@ -324,6 +324,9 @@ export const STATIC_I18N_KEYS = [
   'No models to add',
   'No models to remove',
 
+  // Channel multi-line key validation (MULTI_LINE_KEY_ERROR, consumed via FormMessage's t(body))
+  'Single-key channels accept only one key (one line). To store multiple keys, create a channel using the "Multi-Key Mode" add option.',
+
   // Header manipulation
   'Pass Headers',
   'Set Header',
