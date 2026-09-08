@@ -61,6 +61,12 @@ export interface ParsedRequest {
   messages: ParsedMessage[]
 }
 
+/** Audio output extracted from a response, playable through <audio>. */
+export interface ParsedResponseAudio {
+  /** `data:audio/<format>;base64,<data>` URI ready for an <audio> src. */
+  url: string
+}
+
 export interface ParsedResponse {
   format: Log4BodyFormat
   /** Chain-of-thought / thinking content. */
@@ -69,6 +75,8 @@ export interface ParsedResponse {
   content?: string
   refusal?: string
   toolCalls?: ParsedToolCall[]
+  /** Base64 audio payload (OpenAI chat audio output modality). */
+  audio?: ParsedResponseAudio
   finishReason?: string
   error?: string
 }
@@ -680,6 +688,70 @@ export function parseRequestBody(body: string): ParsedRequest | null {
 
 // ---------- Response parsing ----------
 
+/**
+ * MIME types for the audio formats a response may declare explicitly.
+ * pcm16 is raw headerless PCM — no browser <audio> can play it, the
+ * honest type at least makes that visible instead of guessing wrong.
+ */
+const AUDIO_FORMAT_MEDIA_TYPES: Record<string, string> = {
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  opus: 'audio/ogg',
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  pcm16: 'audio/pcm',
+}
+
+/**
+ * Base64 prefixes identifying audio containers by their file magic.
+ * base64 maps 3 bytes to 4 characters, so each prefix is an exact byte
+ * signature: RIFF (WAV), OggS (Opus speech) and fLaC.
+ */
+const AUDIO_DATA_PREFIXES: Array<[prefix: string, mediaType: string]> = [
+  ['UklGR', 'audio/wav'],
+  ['T2dnU', 'audio/ogg'],
+  ['ZkxhQ', 'audio/flac'],
+]
+
+/**
+ * ADTS AAC frames open with the 12-bit sync 0xFF followed by one of four
+ * second bytes (0xF1/0xF0/0xF9/0xF8 = MPEG-4/2 × CRC/no-CRC). base64 '//'
+ * forces the first byte pair to 0xFF 0xF*, and the third character covers
+ * exactly those four headers (A-H, g-n); every other MPEG audio frame
+ * (MP3) lands on a third character outside that range and falls through
+ * to the audio/mpeg fallback.
+ */
+const ADTS_AAC_PREFIX = /^\/\/[A-Hg-n]/
+
+/**
+ * Build a playable data URI from an audio output payload.
+ *
+ * The OpenAI chat audio object carries no format field (the format is a
+ * request-side parameter), so an explicitly declared format wins, then the
+ * base64 magic bytes are sniffed, and anything unrecognized falls back to
+ * audio/mpeg — raw MPEG audio frames (MP3) decode fine as mpeg, while
+ * genuinely headerless payloads (raw pcm) cannot be played by any browser
+ * anyway.
+ *
+ * @param data - Base64 audio payload as stored in the response body
+ * @param format - Optional format string the payload declared
+ * @returns A `data:audio/...;base64,...` URI for an <audio controls> src
+ */
+function buildAudioDataUri(data: string, format: string): ParsedResponseAudio {
+  let mediaType = AUDIO_FORMAT_MEDIA_TYPES[format]
+  if (!mediaType) {
+    for (const [prefix, magicType] of AUDIO_DATA_PREFIXES) {
+      if (data.startsWith(prefix)) {
+        mediaType = magicType
+        break
+      }
+    }
+  }
+  if (!mediaType && ADTS_AAC_PREFIX.test(data)) mediaType = 'audio/aac'
+  if (!mediaType) mediaType = 'audio/mpeg'
+  return { url: `data:${mediaType};base64,${data}` }
+}
+
 function parseOpenAIResponse(record: UnknownRecord): ParsedResponse {
   const result: ParsedResponse = { format: 'openai' }
   const errorMessage = extractErrorMessage(record.error)
@@ -714,7 +786,13 @@ function parseOpenAIResponse(record: UnknownRecord): ParsedResponse {
       })
     }
     if (toolCalls.length) result.toolCalls = toolCalls
-    // Audio output modalities deliver the spoken text as a transcript.
+    // Audio output modality: the base64 payload becomes a playable data URI
+    // and the spoken text keeps flowing into content as the transcript.
+    const audioRecord = asRecord(message.audio)
+    const audioData = asString(audioRecord?.data)
+    if (audioData) {
+      result.audio = buildAudioDataUri(audioData, asString(audioRecord?.format))
+    }
     const transcript = asString(asRecord(message.audio)?.transcript)
     if (transcript) {
       result.content = [result.content, transcript].filter(Boolean).join('\n\n')

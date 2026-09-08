@@ -95,3 +95,27 @@ describe('Log4ResponseView stats row cost item', () => {
     expect(screen.getByText('Subscription')).toBeInTheDocument()
   })
 })
+
+describe('Log4ResponseView audio output', () => {
+  test('renders an audio player instead of the empty state for an audio-only response', () => {
+    const audioResponse: ParsedResponse = {
+      format: 'openai',
+      audio: { url: 'data:audio/wav;base64,UklGRi4A' },
+    }
+    const { container } = render(
+      <Log4ResponseView
+        data={data}
+        response={audioResponse}
+        log={log}
+        other={{} as LogOtherData}
+      />
+    )
+
+    expect(screen.getByText('Audio')).toBeInTheDocument()
+    const player = container.querySelector('audio')
+    expect(player).not.toBeNull()
+    expect(player).toHaveAttribute('src', 'data:audio/wav;base64,UklGRi4A')
+    expect(player).toHaveAttribute('controls')
+    expect(screen.queryByText('No response body')).not.toBeInTheDocument()
+  })
+})

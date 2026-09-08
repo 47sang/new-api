@@ -25,6 +25,7 @@ import { Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
+import { Label } from '@/components/ui/label'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
@@ -139,6 +140,20 @@ export function Log4ResponseView(props: {
         </div>
       )}
 
+      {response.audio && (
+        <div className='space-y-1.5'>
+          <Label className='text-xs font-semibold'>{t('Audio')}</Label>
+          {/* Native controls: the data URI is decoded from the response
+              body already in memory, so no lazy loading is needed. */}
+          <audio
+            controls
+            preload='metadata'
+            src={response.audio.url}
+            className='bg-muted/30 w-full rounded-md border'
+          />
+        </div>
+      )}
+
       {response.reasoning && (
         <JsonBlock
           label={t('Thinking')}
@@ -183,6 +198,7 @@ export function Log4ResponseView(props: {
       {!response.reasoning &&
       !response.content &&
       !(response.toolCalls ?? []).length &&
+      !response.audio &&
       !response.error &&
       !response.refusal ? (
         <div className='text-muted-foreground py-8 text-center text-xs'>

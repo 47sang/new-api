@@ -371,6 +371,87 @@ describe('parseResponseBody', () => {
     expect(parsed?.error).toBe('rate limited')
   })
 
+  test('extracts audio output as a playable data URI sniffed from base64 magic', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: '',
+              audio: {
+                id: 'a1',
+                // base64 of RIFF/WAVE bytes — no format field, as OpenAI
+                // audio objects omit it (the format is request-side).
+                data: 'UklGRi4A',
+                transcript: 'Hello there',
+              },
+            },
+          },
+        ],
+      })
+    )
+    expect(parsed?.audio?.url).toBe('data:audio/wav;base64,UklGRi4A')
+    expect(parsed?.content).toBe('Hello there')
+  })
+
+  test('prefers an explicitly declared audio format over the sniffed one', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        choices: [{ message: { audio: { data: 'UklGRi4A', format: 'mp3' } } }],
+      })
+    )
+    expect(parsed?.audio?.url).toBe('data:audio/mpeg;base64,UklGRi4A')
+  })
+
+  test('falls back to the mp3 demuxer for payloads without a known signature', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        choices: [{ message: { audio: { data: 'cmF3' } } }],
+      })
+    )
+    expect(parsed?.audio?.url).toBe('data:audio/mpeg;base64,cmF3')
+  })
+
+  test('sniffs each audio container signature to its media type', () => {
+    // base64 of each container's file magic, including the AAC/MP3 frame
+    // variants that share the 0xFF 0xFx MPEG sync.
+    const cases: Array<[data: string, mediaType: string]> = [
+      ['UklGRi4A', 'audio/wav'], // RIFF/WAVE
+      ['T2dnUwJ/', 'audio/ogg'], // OggS (Opus speech)
+      ['ZkxhQwh1', 'audio/flac'], // fLaC
+      ['//EA//7u', 'audio/aac'], // ADTS 0xFF 0xF1 (MPEG-4)
+      ['//mA//7u', 'audio/aac'], // ADTS 0xFF 0xF9 (MPEG-2)
+      ['//uQxAAA', 'audio/mpeg'], // raw MP3 frame 0xFF 0xFB
+      ['SUQzAwAA', 'audio/mpeg'], // ID3-tagged MP3
+    ]
+    for (const [data, mediaType] of cases) {
+      const parsed = parseResponseBody(
+        JSON.stringify({ choices: [{ message: { audio: { data } } }] })
+      )
+      expect(parsed?.audio?.url).toBe(`data:${mediaType};base64,${data}`)
+    }
+  })
+
+  test('ignores non-string or empty audio data instead of building a broken URI', () => {
+    for (const data of [123, '']) {
+      const parsed = parseResponseBody(
+        JSON.stringify({ choices: [{ message: { audio: { data } } }] })
+      )
+      expect(parsed?.audio).toBeUndefined()
+    }
+  })
+
+  test('keeps transcript-only audio objects without building a data URI', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        choices: [{ message: { audio: { transcript: 'spoken words' } } }],
+      })
+    )
+    expect(parsed?.audio).toBeUndefined()
+    expect(parsed?.content).toBe('spoken words')
+  })
+
   test('surfaces string-typed error payloads on merged streams', () => {
     // Stream-merged error-only payload produced by the backend merger
     // (see middleware/response_stream_merge.go): empty choices + string error.
