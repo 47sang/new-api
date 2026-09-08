@@ -486,6 +486,99 @@ func TestCacheWriteTokensTotal(t *testing.T) {
 	})
 }
 
+// TestUsageDashboardTokenUsed 锁定 quota_data.token_used 的用量分析口径：
+// anthropic 语义下 prompt_tokens 不含缓存，token_used 必须补上缓存读/写；
+// openai 语义下 prompt_tokens 已含缓存命中，不得重复相加。
+func TestUsageDashboardTokenUsed(t *testing.T) {
+	t.Run("anthropic semantic adds cache read and write", func(t *testing.T) {
+		summary := textQuotaSummary{
+			PromptTokens:          345,
+			CompletionTokens:      719,
+			CacheTokens:           124224,
+			IsClaudeUsageSemantic: true,
+		}
+		require.Equal(t, 345+719+124224, summary.usageDashboardTokenUsed())
+	})
+
+	t.Run("anthropic semantic dedups split cache write", func(t *testing.T) {
+		summary := textQuotaSummary{
+			PromptTokens:          100,
+			CompletionTokens:      200,
+			CacheTokens:           300,
+			CacheCreationTokens:   50,
+			CacheCreationTokens5m: 10,
+			CacheCreationTokens1h: 20,
+			IsClaudeUsageSemantic: true,
+		}
+		// cache write 取聚合值 50（大于 5m+1h 拆分和 30），不得叠加两份。
+		require.Equal(t, 100+200+300+50, summary.usageDashboardTokenUsed())
+	})
+
+	t.Run("openai semantic keeps prompt containing cached subset", func(t *testing.T) {
+		summary := textQuotaSummary{
+			PromptTokens:          1200,
+			CompletionTokens:      300,
+			CacheTokens:           800,
+			CacheCreationTokens:   50,
+			IsClaudeUsageSemantic: false,
+		}
+		require.Equal(t, 1500, summary.usageDashboardTokenUsed())
+	})
+
+	t.Run("legacy claude derived openai usage walks calculateTextQuotaSummary", func(t *testing.T) {
+		gin.SetMode(gin.TestMode)
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		relayInfo := &relaycommon.RelayInfo{
+			RelayFormat:     types.RelayFormatOpenAI,
+			OriginModelName: "claude-3-7-sonnet",
+			PriceData: hosttypes.PriceData{
+				ModelRatio:           1,
+				CompletionRatio:      5,
+				CacheRatio:           0.1,
+				CacheCreationRatio:   1.25,
+				CacheCreation5mRatio: 1.25,
+				CacheCreation1hRatio: 2,
+				GroupRatioInfo:       hosttypes.GroupRatioInfo{GroupRatio: 1},
+			},
+			StartTime: time.Now(),
+		}
+		// 旧版上游在 OpenAI 格式里输出未打标的 claude 缓存字段：
+		// prompt 是未缓存剩余量，缓存读/写单独计价，token_used 必须补加。
+		usage := &dto.Usage{
+			PromptTokens:     62,
+			CompletionTokens: 95,
+			PromptTokensDetails: dto.InputTokenDetails{
+				CachedTokens: 3544,
+			},
+			ClaudeCacheCreation5mTokens: 586,
+		}
+
+		summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+		require.True(t, summary.IsLegacyClaudeDerived)
+		require.False(t, summary.IsClaudeUsageSemantic)
+		require.Equal(t, 62+95+3544+586, summary.usageDashboardTokenUsed())
+	})
+
+	t.Run("saturates at int32 boundary instead of wrapping", func(t *testing.T) {
+		summary := textQuotaSummary{
+			PromptTokens:          4611686018427387904,
+			CompletionTokens:      300000000000000000,
+			CacheTokens:           4611686018427387904,
+			IsClaudeUsageSemantic: true,
+		}
+		require.Equal(t, math.MaxInt32, summary.usageDashboardTokenUsed())
+
+		negative := textQuotaSummary{
+			PromptTokens:          100,
+			CompletionTokens:      math.MinInt64 / 2,
+			IsClaudeUsageSemantic: true,
+		}
+		// 恶意负值被逐项钳制为 0，总量永不为负。
+		require.Equal(t, 100, negative.usageDashboardTokenUsed())
+	})
+}
+
 func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

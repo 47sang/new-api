@@ -62,6 +62,7 @@ type textQuotaSummary struct {
 	CacheCreationRatio1h   float64
 	Quota                  int
 	IsClaudeUsageSemantic  bool
+	IsLegacyClaudeDerived  bool
 	UsageSemantic          string
 	AudioInputPrice        float64
 	ToolSurchargeItems     []ToolSurchargeItem
@@ -85,6 +86,33 @@ func cacheWriteTokensTotal(summary textQuotaSummary) int {
 		return splitCacheWriteTokens
 	}
 	return summary.CacheCreationTokens
+}
+
+// usageDashboardTokenUsed 返回写入 quota_data.token_used 的用量分析 Token 总口径：
+// 提示 + 缓存读 + 缓存写 + 补全。anthropic 语义与 legacy claude 派生口径下
+// prompt_tokens 是未缓存剩余量（Anthropic 的 input_tokens 不含缓存读/写），
+// 必须补上缓存两项；openai 语义下 prompt_tokens 按约定已包含缓存命中，
+// 重复相加会双重计数。上游 usage 的 token 数未经验证，按计费侧惯例在
+// int32 边界饱和：每项先钳制到 [0, MaxInt32]，四项之和的 int64 累加
+// 数学上不可能回绕，总量永不为负。
+func (s textQuotaSummary) usageDashboardTokenUsed() int {
+	clamp := func(v int) int64 {
+		if v < 0 {
+			return 0
+		}
+		if v > math.MaxInt32 {
+			return math.MaxInt32
+		}
+		return int64(v)
+	}
+	total := clamp(s.PromptTokens) + clamp(s.CompletionTokens)
+	if s.IsClaudeUsageSemantic || s.IsLegacyClaudeDerived {
+		total += clamp(s.CacheTokens) + clamp(cacheWriteTokensTotal(s))
+	}
+	if total > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(total)
 }
 
 func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
@@ -264,6 +292,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
+	summary.IsLegacyClaudeDerived = legacyClaudeDerived
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&
 		summary.IsClaudeUsageSemantic
@@ -527,6 +556,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     summary.PromptTokens,
 		CompletionTokens: summary.CompletionTokens,
+		TokenUsed:        summary.usageDashboardTokenUsed(),
 		ModelName:        logModel,
 		TokenName:        summary.TokenName,
 		Quota:            summary.Quota,
