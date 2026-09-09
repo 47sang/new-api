@@ -2,8 +2,8 @@ package setting
 
 import "strings"
 
-var CheckSensitiveEnabled = true
-var CheckSensitiveOnPromptEnabled = true
+var CheckSensitiveEnabled = false
+var CheckSensitiveOnPromptEnabled = false
 
 //var CheckSensitiveOnCompletionEnabled = true
 
