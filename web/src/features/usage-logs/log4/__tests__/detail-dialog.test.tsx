@@ -424,4 +424,134 @@ describe('Log4DetailDialog', () => {
     })
     expect(thumbnail).toBeInTheDocument()
   })
+
+  test('renders a generation prompt view instead of the chat fallback', async () => {
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: JSON.stringify({
+          model: 'doubao-seedream-5.0-lite',
+          prompt: 'A character sheet, 4 views',
+          response_format: 'url',
+          watermark: false,
+          size: '2K',
+        }),
+        response_body: '',
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    renderDialog({ log: buildLog({}), isAdmin: true })
+
+    // The prompt text and the parameters are shown on the input tab…
+    await waitFor(() =>
+      expect(screen.getByText('A character sheet, 4 views')).toBeInTheDocument()
+    )
+    expect(screen.getByText('Parameters')).toBeInTheDocument()
+    expect(screen.getByText('response_format')).toBeInTheDocument()
+    expect(screen.getByText('url')).toBeInTheDocument()
+    // …and the unparsable-chat-request fallback never appears.
+    expect(
+      screen.queryByText('Unable to parse this request as a chat request.')
+    ).not.toBeInTheDocument()
+    // Generation requests carry no message-count subtitle.
+    expect(
+      screen.queryByText((_, el) =>
+        Boolean(el?.textContent?.includes('messages'))
+      )
+    ).toBeNull()
+  })
+
+  test('shows the task id on the output tab for a video task creation', async () => {
+    const writeText = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockResolvedValue()
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: JSON.stringify({
+          model: 'doubao-seedance-2-0-mini-260615',
+          prompt: 'A cat walks across the room',
+          seconds: '5',
+        }),
+        response_body: JSON.stringify({
+          id: 'task_abc',
+          task_id: 'task_abc',
+          status: 'queued',
+          model: 'doubao-seedance-2-0-mini-260615',
+          created_at: 1700000000,
+        }),
+        is_stream: false,
+        is_completed: true,
+        response_size: 120,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    const user = userEvent.setup()
+    renderDialog({ log: buildLog({}), isAdmin: true, initialTab: 'output' })
+
+    await waitFor(() => expect(screen.getByText('Task ID')).toBeInTheDocument())
+    expect(screen.getByText('task_abc')).toBeInTheDocument()
+    // The raw video status is normalized to the shared task status label.
+    expect(screen.getByText('Queued')).toBeInTheDocument()
+    // Copying the task id goes through the shared CopyButton.
+    await user.click(screen.getByRole('button', { name: 'Copy to clipboard' }))
+    expect(writeText).toHaveBeenCalledWith('task_abc')
+  })
+
+  test('requires a generation request path before showing the prompt view', async () => {
+    const promptBody = JSON.stringify({
+      model: 'gpt-3.5-turbo-instruct',
+      prompt: 'Say hi',
+      n: 2,
+    })
+    const baseRow = {
+      id: 1,
+      request_id: 'req-abc',
+      request_body: promptBody,
+      response_body: '',
+      is_stream: false,
+      is_completed: true,
+      response_size: 40,
+      status_code: 200,
+      created_at: 1700000000,
+    }
+
+    // A legacy completions path keeps the request on the chat fallback…
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        ...baseRow,
+        // other.request_path disambiguates the minimal prompt body.
+        request_body: promptBody,
+      })
+    )
+    const { unmount } = renderDialog({
+      log: buildLog({
+        other: JSON.stringify({ request_path: '/v1/completions' }),
+      }),
+      isAdmin: true,
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByText('Unable to parse this request as a chat request.')
+      ).toBeInTheDocument()
+    )
+    unmount()
+
+    // …while the same body from an image endpoint renders the prompt view.
+    mockedAdminFetch.mockResolvedValue(asResult({ ...baseRow }))
+    renderDialog({
+      log: buildLog({
+        other: JSON.stringify({ request_path: '/v1/images/generations' }),
+      }),
+      isAdmin: true,
+    })
+    await waitFor(() => expect(screen.getByText('Say hi')).toBeInTheDocument())
+  })
 })

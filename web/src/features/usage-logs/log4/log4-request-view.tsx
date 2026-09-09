@@ -45,7 +45,11 @@ import {
 import { RoleBadge } from './role-badge'
 import { LOG4_ROLE_META } from './role-meta'
 
-function StatRow(props: { label: React.ReactNode; children: React.ReactNode }) {
+/** One label/value stat line shared by the chat and generation input tabs. */
+export function StatRow(props: {
+  label: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <div className='flex items-center justify-between gap-2 text-xs'>
       <span className='text-muted-foreground shrink-0'>{props.label}</span>

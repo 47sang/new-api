@@ -119,3 +119,69 @@ describe('Log4ResponseView audio output', () => {
     expect(screen.queryByText('No response body')).not.toBeInTheDocument()
   })
 })
+
+describe('Log4ResponseView generated images', () => {
+  test('renders a gallery with thumbnails instead of the empty state', () => {
+    const imagesResponse: ParsedResponse = {
+      format: 'openai',
+      images: [
+        { url: 'https://ark.example/a.jpeg' },
+        { url: 'data:image/png;base64,AAAA' },
+      ],
+    }
+    render(
+      <Log4ResponseView
+        data={data}
+        response={imagesResponse}
+        log={log}
+        other={{} as LogOtherData}
+      />
+    )
+
+    expect(screen.getByText('Generated Images')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Open image 1 of 2' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No response body')).not.toBeInTheDocument()
+  })
+
+  test('keeps the empty state when the response has no images', () => {
+    render(
+      <Log4ResponseView
+        data={data}
+        response={{ format: 'openai' }}
+        log={log}
+        other={{} as LogOtherData}
+      />
+    )
+    expect(screen.queryByText('Generated Images')).not.toBeInTheDocument()
+  })
+})
+
+describe('Log4ResponseView task creation', () => {
+  test('shows the task id with a status badge and the async hint', () => {
+    const taskResponse: ParsedResponse = {
+      format: 'openai',
+      task: { id: 'task_abc', status: 'queued' },
+    }
+    render(
+      <Log4ResponseView
+        data={data}
+        response={taskResponse}
+        log={log}
+        other={{} as LogOtherData}
+      />
+    )
+
+    expect(screen.getByText('Task ID')).toBeInTheDocument()
+    expect(screen.getByText('task_abc')).toBeInTheDocument()
+    // The raw video status is normalized to the shared task status label.
+    expect(screen.getByText('Queued')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Asynchronous task — use the task ID to look up its progress and result.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No response body')).not.toBeInTheDocument()
+  })
+})

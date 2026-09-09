@@ -167,10 +167,14 @@ function Log4ImageLightbox(props: {
  * @param props.totalCount - Image count the parser reported, including
  *   non-renderable references; when nothing is renderable the original
  *   count badge is kept so auditors still see the turn carried images
+ * @param props.thumbnailClassName - Size classes for the thumbnails
+ *   (defaults to the chat message size); generation outputs pass larger
+ *   sizes
  */
 export function Log4ImageGallery(props: {
   images: ParsedMessageImage[]
   totalCount?: number
+  thumbnailClassName?: string
 }) {
   const { t } = useTranslation()
   const [openIndex, setOpenIndex] = useState<number | null>(null)
@@ -217,7 +221,10 @@ export function Log4ImageGallery(props: {
             <img
               src={entry.image.url}
               alt=''
-              className='size-20 object-cover'
+              className={cn(
+                'object-cover',
+                props.thumbnailClassName ?? 'size-20'
+              )}
               loading='lazy'
               decoding='async'
             />

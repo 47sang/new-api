@@ -43,9 +43,15 @@ import type { UsageLog } from '../data/schema'
 import { formatJsonBody, parseLogOther } from '../lib/format'
 import type { LogOtherData, RequestResponseLog } from '../types'
 import type { Log4DetailTab } from './lib'
+import { Log4GenerationView } from './log4-generation-view'
 import { Log4RequestView } from './log4-request-view'
 import { Log4ResponseView } from './log4-response-view'
-import { parseRequestBody, parseResponseBody } from './request-body'
+import {
+  isGenerationRequest,
+  matchesGenerationRequestPath,
+  parseRequestBody,
+  parseResponseBody,
+} from './request-body'
 
 const LOG4_TABS: Array<{ id: Log4DetailTab; labelKey: string }> = [
   { id: 'input', labelKey: 'Input' },
@@ -207,6 +213,17 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
     () => parseLogOther(log?.other ?? '') ?? ({} as LogOtherData),
     [log?.other]
   )
+  // Prompt-style generation requests (image / video) render a dedicated
+  // view; the body heuristic alone cannot tell a minimal image request from
+  // a legacy completions body, so the recorded request path confirms it.
+  const generationRequest =
+    parsedRequest &&
+    isGenerationRequest(parsedRequest) &&
+    matchesGenerationRequestPath(other.request_path)
+      ? parsedRequest
+      : null
+  const chatRequest =
+    parsedRequest && !isGenerationRequest(parsedRequest) ? parsedRequest : null
 
   const noRequestId = !props.isAdmin && requestId === ''
   const hasData = !!data
@@ -249,7 +266,16 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
       )
     }
     if (activeTab === 'input') {
-      if (!parsedRequest) {
+      if (generationRequest) {
+        return (
+          <Log4GenerationView
+            request={generationRequest}
+            log={log}
+            other={other}
+          />
+        )
+      }
+      if (!chatRequest) {
         return (
           <div className='flex h-full flex-col items-center justify-center gap-3 px-6 text-center'>
             <span className='text-muted-foreground text-sm'>
@@ -265,7 +291,7 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
           </div>
         )
       }
-      return <Log4RequestView request={parsedRequest} log={log} other={other} />
+      return <Log4RequestView request={chatRequest} log={log} other={other} />
     }
     if (activeTab === 'output') {
       return (
@@ -291,11 +317,11 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
             aria-hidden='true'
           />
           {t('Prompt')}
-          {parsedRequest && (
+          {chatRequest && (
             <span className='text-muted-foreground text-sm font-normal'>
               ·{' '}
               {t('{{count}} messages', {
-                count: parsedRequest.messages.length,
+                count: chatRequest.messages.length,
               })}{' '}
               · {(log?.prompt_tokens || 0).toLocaleString()} tok
             </span>

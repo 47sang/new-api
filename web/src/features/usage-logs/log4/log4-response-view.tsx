@@ -20,10 +20,12 @@ import { Wrench } from 'lucide-react'
 /**
  * Output tab of the Log4 detail dialog: response stats followed by the
  * chain-of-thought, tool calls and final answer extracted from the
- * stored response body.
+ * stored response body. Generation responses render their image gallery
+ * or the async task-creation envelope instead.
  */
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { StatusBadge } from '@/components/status-badge'
 import { Label } from '@/components/ui/label'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -31,8 +33,11 @@ import { cn } from '@/lib/utils'
 
 import { JsonBlock } from '../components/json-block'
 import { LogCostDisplay } from '../components/log-cost-display'
+import { TASK_STATUS } from '../constants'
 import type { UsageLog } from '../data/schema'
+import { taskStatusMapper } from '../lib/mappers'
 import type { LogOtherData, RequestResponseLog } from '../types'
+import { Log4ImageGallery } from './log4-image-viewer'
 import type { ParsedResponse } from './request-body'
 
 function ToolCallCard(props: { name: string; arguments: string }) {
@@ -47,6 +52,57 @@ function ToolCallCard(props: { name: string; arguments: string }) {
           {props.arguments}
         </pre>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Creation responses report the OpenAI-video status vocabulary (queued /
+ * in_progress / completed / failed); normalize it to the shared task
+ * status keys so the label and color reuse the task log mappings.
+ */
+const VIDEO_STATUS_TO_TASK_STATUS: Record<string, string> = {
+  queued: TASK_STATUS.QUEUED,
+  in_progress: TASK_STATUS.IN_PROGRESS,
+  completed: TASK_STATUS.SUCCESS,
+  failed: TASK_STATUS.FAILURE,
+  unknown: TASK_STATUS.UNKNOWN,
+}
+
+/** Async task-creation envelope: copyable public task id plus status. */
+function TaskCreationCard(props: {
+  task: NonNullable<ParsedResponse['task']>
+}) {
+  const { t } = useTranslation()
+  const task = props.task
+  const taskStatus = task.status
+    ? (VIDEO_STATUS_TO_TASK_STATUS[task.status] ?? task.status)
+    : ''
+
+  return (
+    <div className='bg-muted/30 space-y-2 rounded-lg border p-2.5'>
+      <div className='flex flex-wrap items-center gap-2'>
+        <span className='text-xs font-semibold'>{t('Task ID')}</span>
+        <span className='font-mono text-xs break-all'>{task.id}</span>
+        <CopyButton
+          value={task.id}
+          className='h-6 w-6 p-0'
+          iconClassName='size-3.5'
+        />
+        {taskStatus && (
+          <StatusBadge
+            label={t(taskStatusMapper.getLabel(taskStatus, taskStatus))}
+            variant={taskStatusMapper.getVariant(taskStatus)}
+            size='sm'
+            copyable={false}
+          />
+        )}
+      </div>
+      <p className='text-muted-foreground text-xs'>
+        {t(
+          'Asynchronous task — use the task ID to look up its progress and result.'
+        )}
+      </p>
     </div>
   )
 }
@@ -134,9 +190,26 @@ export function Log4ResponseView(props: {
         )}
       </div>
 
+      {response.task && <TaskCreationCard task={response.task} />}
+
       {response.error && (
         <div className='rounded-md border border-red-200 bg-red-50 p-2.5 text-xs break-all whitespace-pre-wrap text-red-600 dark:border-red-900 dark:bg-red-950/20 dark:text-red-400'>
           {response.error}
+        </div>
+      )}
+
+      {(response.images ?? []).length > 0 && (
+        <div className='space-y-1.5'>
+          <Label className='text-xs font-semibold'>
+            {t('Generated Images')}
+          </Label>
+          {/* Generation previews use larger thumbnails than chat message
+              images; the lightbox shows the full picture either way. */}
+          <Log4ImageGallery
+            images={response.images ?? []}
+            totalCount={response.images?.length}
+            thumbnailClassName='size-32'
+          />
         </div>
       )}
 
@@ -199,6 +272,8 @@ export function Log4ResponseView(props: {
       !response.content &&
       !(response.toolCalls ?? []).length &&
       !response.audio &&
+      !(response.images ?? []).length &&
+      !response.task &&
       !response.error &&
       !response.refusal ? (
         <div className='text-muted-foreground py-8 text-center text-xs'>

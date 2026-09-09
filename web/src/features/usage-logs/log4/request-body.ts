@@ -22,11 +22,13 @@ For commercial licensing, please contact support@quantumnous.com
  * message list for the Log4 detail dialog.
  *
  * Supported request formats: OpenAI Chat Completions, Claude Messages,
- * Gemini GenerateContent, OpenAI Responses. Supported response formats are
- * the same four, both non-streaming JSON and the stream-merged single
- * object produced by the backend. Parsers return null for anything else
- * (embeddings, image generation, unrecognized SSE) so the dialog can fall
- * back to the raw view.
+ * Gemini GenerateContent, OpenAI Responses, plus prompt-style generation
+ * requests (image generation, video task creation). Supported response
+ * formats are the same chat formats — both non-streaming JSON and the
+ * stream-merged single object produced by the backend — plus generated
+ * image payloads and async task-creation envelopes. Chat parsers return
+ * null for anything else (embeddings, unrecognized SSE) so the dialog can
+ * fall back to the raw view.
  */
 
 export type Log4BodyFormat = 'openai' | 'claude' | 'gemini' | 'responses'
@@ -61,10 +63,67 @@ export interface ParsedRequest {
   messages: ParsedMessage[]
 }
 
+/**
+ * A prompt-style generation request (image generation, video task
+ * creation): the API contract is a top-level `prompt` string plus
+ * generation parameters, with no chat message envelope.
+ */
+export interface ParsedGenerationRequest {
+  format: 'generation'
+  /** The generation prompt text. */
+  prompt: string
+  /**
+   * Remaining top-level request parameters (model, size, seconds, ...).
+   * `truncated` marks values clipped to MAX_GENERATION_PARAM_LENGTH —
+   * inline base64 payloads can be megabytes and would freeze the pane.
+   */
+  params: Array<{ key: string; value: string; truncated?: boolean }>
+}
+
+/** True when the parsed request is a generation request, not a chat one. */
+export function isGenerationRequest(
+  request: ParsedRequest | ParsedGenerationRequest
+): request is ParsedGenerationRequest {
+  return request.format === 'generation'
+}
+
+/** Relay paths that create generation tasks or images. */
+const GENERATION_REQUEST_PATH_PREFIXES = [
+  '/v1/images',
+  '/v1/video',
+  '/v1/videos',
+]
+
+/**
+ * Confirm the log's recorded request path belongs to a generation endpoint
+ * (image generation, video task creation, video remix). The body heuristic
+ * alone cannot tell a minimal image request from a legacy /v1/completions
+ * body (both may carry only n or seed), so the consume log's
+ * other.request_path decides when it is present.
+ *
+ * @param requestPath - other.request_path of the consume log
+ * @returns True when the path is a generation endpoint, or unknown (older
+ *   logs without the field) so the body heuristic still applies
+ */
+export function matchesGenerationRequestPath(requestPath?: string): boolean {
+  if (!requestPath) return true
+  return GENERATION_REQUEST_PATH_PREFIXES.some((prefix) =>
+    requestPath.startsWith(prefix)
+  )
+}
+
 /** Audio output extracted from a response, playable through <audio>. */
 export interface ParsedResponseAudio {
   /** `data:audio/<format>;base64,<data>` URI ready for an <audio> src. */
   url: string
+}
+
+/** Async task creation response (e.g. video generation submit). */
+export interface ParsedResponseTask {
+  /** Public task ID (`id` first, `task_id` as fallback). */
+  id: string
+  /** Task status reported at creation time (e.g. "queued"). */
+  status?: string
 }
 
 export interface ParsedResponse {
@@ -77,6 +136,10 @@ export interface ParsedResponse {
   toolCalls?: ParsedToolCall[]
   /** Base64 audio payload (OpenAI chat audio output modality). */
   audio?: ParsedResponseAudio
+  /** Generated images (image generation response: data[].url / b64_json). */
+  images?: ParsedMessageImage[]
+  /** Async task creation envelope (video generation submit response). */
+  task?: ParsedResponseTask
   finishReason?: string
   error?: string
 }
@@ -650,13 +713,134 @@ function looksLikeClaudeRequest(record: UnknownRecord): boolean {
 }
 
 /**
- * Parse a stored request body into a unified message list.
+ * Parameter keys that only generation-style requests carry (image
+ * generation, video task creation). A prompt-only body with none of these
+ * is not claimed by the generation parser.
+ */
+const GENERATION_PARAM_KEYS = new Set([
+  // OpenAI images: /v1/images/generations
+  'size',
+  'n',
+  'quality',
+  'response_format',
+  'watermark',
+  'style',
+  'background',
+  'moderation',
+  'output_format',
+  'output_compression',
+  'partial_images',
+  // Video task submit (TaskSubmitReq)
+  'seconds',
+  'duration',
+  'image',
+  'images',
+  'input_reference',
+  'metadata',
+  'width',
+  'height',
+  'fps',
+  'seed',
+  'resolution',
+  'ratio',
+  'mode',
+])
+
+/**
+ * Parameter keys of the legacy /v1/completions endpoint, which also sends a
+ * top-level `prompt`. Those requests keep falling through to the unparsed
+ * view instead of being presented as generation prompts.
+ */
+const COMPLETIONS_ONLY_KEYS = new Set([
+  'max_tokens',
+  'max_completion_tokens',
+  'temperature',
+  'top_p',
+  'echo',
+  'stop',
+  'suffix',
+  'logprobs',
+  'best_of',
+  'logit_bias',
+  'presence_penalty',
+  'frequency_penalty',
+])
+
+/** Render one generation request parameter for the params list. */
+function formatGenerationParamValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  if (value == null) return 'null'
+  return stringifyJson(value)
+}
+
+/**
+ * Length at which a generation parameter value is clipped for display.
+ * Inline base64 reference images run to megabytes; the full content stays
+ * available on the raw tab.
+ */
+const MAX_GENERATION_PARAM_LENGTH = 2000
+
+/**
+ * Parse a prompt-style generation request body (image generation, video
+ * task creation): a top-level string `prompt`, no chat envelope
+ * (messages/contents/input), at least one generation parameter, and no
+ * legacy-completions parameter.
+ *
+ * @param record - Parsed JSON request body
+ * @returns The prompt with the remaining parameters, or null when the body
+ *   is not a recognizable generation request
+ */
+function parseGenerationRequest(
+  record: UnknownRecord
+): ParsedGenerationRequest | null {
+  const prompt = record.prompt
+  if (typeof prompt !== 'string' || !prompt) return null
+  if (
+    asArray(record.messages) ||
+    asArray(record.contents) ||
+    record.input !== undefined
+  ) {
+    return null
+  }
+  let hasGenerationParam = false
+  for (const key of Object.keys(record)) {
+    if (COMPLETIONS_ONLY_KEYS.has(key)) return null
+    if (GENERATION_PARAM_KEYS.has(key)) hasGenerationParam = true
+  }
+  if (!hasGenerationParam) return null
+  const params = Object.keys(record)
+    .filter((key) => key !== 'prompt')
+    .map((key) => {
+      const value = formatGenerationParamValue(record[key])
+      // Inline base64 payloads (image-to-video reference images) reach
+      // megabytes; clip them so rendering the params card stays cheap.
+      if (value.length > MAX_GENERATION_PARAM_LENGTH) {
+        return {
+          key,
+          value: value.slice(0, MAX_GENERATION_PARAM_LENGTH),
+          truncated: true,
+        }
+      }
+      return { key, value }
+    })
+  return { format: 'generation', prompt, params }
+}
+
+/**
+ * Parse a stored request body into a unified message list, or a
+ * generation request for prompt-style bodies.
  *
  * @param body - Raw request_body string as stored in request_response_logs
- * @returns Parsed messages, or null when the body is not a supported chat
- *   request (invalid JSON, embeddings, image generation, multipart, ...)
+ * @returns Parsed chat messages / generation request, or null when the
+ *   body is not a supported request (invalid JSON, embeddings, multipart
+ *   placeholder, ...)
  */
-export function parseRequestBody(body: string): ParsedRequest | null {
+export function parseRequestBody(
+  body: string
+): ParsedRequest | ParsedGenerationRequest | null {
   if (!body) return null
   let parsed: unknown
   try {
@@ -683,7 +867,7 @@ export function parseRequestBody(body: string): ParsedRequest | null {
     const messages = parseOpenAIMessages(record)
     return messages ? { format: 'openai', messages } : null
   }
-  return null
+  return parseGenerationRequest(record)
 }
 
 // ---------- Response parsing ----------
@@ -750,6 +934,70 @@ function buildAudioDataUri(data: string, format: string): ParsedResponseAudio {
   if (!mediaType && ADTS_AAC_PREFIX.test(data)) mediaType = 'audio/aac'
   if (!mediaType) mediaType = 'audio/mpeg'
   return { url: `data:${mediaType};base64,${data}` }
+}
+
+/**
+ * Base64 prefixes identifying image containers by their file magic,
+ * verified byte-exact: PNG (8-byte header), JPEG (FF D8 FF), RIFF (WEBP)
+ * and GIF8 (GIF87a/89a share the 6-byte encoding prefix "R0lGOD").
+ */
+const IMAGE_DATA_PREFIXES: Array<[prefix: string, mediaType: string]> = [
+  ['iVBORw0KGgo', 'image/png'],
+  ['/9j/', 'image/jpeg'],
+  ['UklGR', 'image/webp'],
+  ['R0lGOD', 'image/gif'],
+]
+
+/**
+ * Sniff the MIME type of a base64 image payload by its magic bytes.
+ * Generation APIs do not echo an output format on the response, so the
+ * bytes decide; an unrecognized payload claims image/png.
+ */
+function sniffImageMediaType(data: string): string {
+  for (const [prefix, mediaType] of IMAGE_DATA_PREFIXES) {
+    if (data.startsWith(prefix)) return mediaType
+  }
+  return 'image/png'
+}
+
+/**
+ * Collect the renderable images of an image-generation response body
+ * (`data[]` items): `b64_json` payloads become data URIs with a sniffed
+ * MIME type, `url` entries pass through collectImage so non-renderable
+ * values are skipped.
+ */
+function collectGenerationImages(data: unknown[]): ParsedMessageImage[] {
+  const images: ParsedMessageImage[] = []
+  for (const raw of data) {
+    const item = asRecord(raw)
+    if (!item) continue
+    const b64 = asString(item.b64_json)
+    if (b64) {
+      const mediaType = sniffImageMediaType(b64)
+      images.push({
+        url: `data:${mediaType};base64,${b64}`,
+        mediaType,
+      })
+      continue
+    }
+    collectImage(images, item.url)
+  }
+  return images
+}
+
+/**
+ * Recognize an async task-creation response (video generation submit):
+ * a public task id (`id` first, `task_id` fallback — the host fallback
+ * shape carries both, the pinned /v1/videos shape only `id`) plus a
+ * status field, with none of the chat response markers.
+ */
+function parseTaskCreationResponse(
+  record: UnknownRecord
+): ParsedResponseTask | null {
+  const id = asString(record.id) || asString(record.task_id)
+  const status = asString(record.status)
+  if (!id || !status) return null
+  return { id, status }
 }
 
 function parseOpenAIResponse(record: UnknownRecord): ParsedResponse {
@@ -918,7 +1166,8 @@ function parseResponsesResponse(record: UnknownRecord): ParsedResponse {
 }
 
 /**
- * Parse a stored response body into reasoning/content/tool calls.
+ * Parse a stored response body into reasoning/content/tool calls, generated
+ * images, or an async task-creation envelope.
  *
  * @param body - Raw response_body string (JSON, or stream-merged JSON);
  *   non-JSON payloads (raw unmerged SSE, binary placeholders) yield null so
@@ -943,6 +1192,24 @@ export function parseResponseBody(body: string): ParsedResponse | null {
   }
   if (asString(record.type) === 'message' || asArray(record.content)) {
     return parseClaudeResponse(record)
+  }
+  // Image-generation response: data[] items carrying url / b64_json.
+  // Embeddings share the data[] envelope but carry neither key, so they
+  // still fall through to null.
+  const dataItems = asArray(record.data)
+  if (dataItems) {
+    const images = collectGenerationImages(dataItems)
+    if (images.length) {
+      const result: ParsedResponse = { format: 'openai', images }
+      const errorMessage = extractErrorMessage(record.error)
+      if (errorMessage) result.error = errorMessage
+      return result
+    }
+  }
+  // Async task-creation response (video generation submit).
+  const task = parseTaskCreationResponse(record)
+  if (task) {
+    return { format: 'openai', task }
   }
   // Bare error payloads ({"error": "rate limited"} or {"error": {...}})
   // carry no format marker; the format field is not rendered when only an

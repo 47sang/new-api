@@ -21,9 +21,17 @@ import { describe, expect, test } from 'vitest'
 import {
   estimateMessageTokens,
   extractMessageImages,
+  matchesGenerationRequestPath,
   parseRequestBody,
   parseResponseBody,
+  type ParsedRequest,
 } from '../request-body'
+
+/** Test fixture: parse a body known to be a chat request, never generation. */
+function parseChatBody(body: string): ParsedRequest | null {
+  const parsed = parseRequestBody(body)
+  return parsed && parsed.format !== 'generation' ? parsed : null
+}
 
 describe('parseRequestBody — OpenAI Chat Completions', () => {
   test('parses string and array content, tool roles and tool calls', () => {
@@ -53,7 +61,7 @@ describe('parseRequestBody — OpenAI Chat Completions', () => {
       ],
     })
 
-    const parsed = parseRequestBody(body)
+    const parsed = parseChatBody(body)
     expect(parsed?.format).toBe('openai')
     expect(parsed?.messages).toHaveLength(4)
     expect(parsed?.messages[0]).toMatchObject({
@@ -75,7 +83,7 @@ describe('parseRequestBody — OpenAI Chat Completions', () => {
   })
 
   test('treats the developer role as system', () => {
-    const parsed = parseRequestBody(
+    const parsed = parseChatBody(
       JSON.stringify({ messages: [{ role: 'developer', content: 'rules' }] })
     )
     expect(parsed?.messages[0]?.role).toBe('system')
@@ -120,7 +128,7 @@ describe('parseRequestBody — Claude Messages', () => {
       ],
     })
 
-    const parsed = parseRequestBody(body)
+    const parsed = parseChatBody(body)
     expect(parsed?.format).toBe('claude')
     expect(parsed?.messages).toHaveLength(4)
     expect(parsed?.messages[0]).toMatchObject({
@@ -144,7 +152,7 @@ describe('parseRequestBody — Claude Messages', () => {
   })
 
   test('detects Claude requests without a system field via block types', () => {
-    const parsed = parseRequestBody(
+    const parsed = parseChatBody(
       JSON.stringify({
         model: 'claude-sonnet-5',
         max_tokens: 64,
@@ -179,7 +187,7 @@ describe('parseRequestBody — Gemini GenerateContent', () => {
       ],
     })
 
-    const parsed = parseRequestBody(body)
+    const parsed = parseChatBody(body)
     expect(parsed?.format).toBe('gemini')
     expect(parsed?.messages).toHaveLength(4)
     expect(parsed?.messages[0]).toMatchObject({
@@ -214,7 +222,7 @@ describe('parseRequestBody — OpenAI Responses', () => {
       ],
     })
 
-    const parsed = parseRequestBody(body)
+    const parsed = parseChatBody(body)
     expect(parsed?.format).toBe('responses')
     expect(parsed?.messages).toHaveLength(4)
     expect(parsed?.messages[0]).toMatchObject({
@@ -232,7 +240,7 @@ describe('parseRequestBody — OpenAI Responses', () => {
   })
 
   test('parses plain string input as a single user message', () => {
-    const parsed = parseRequestBody(
+    const parsed = parseChatBody(
       JSON.stringify({ model: 'gpt-5', input: 'Just ask me' })
     )
     expect(parsed?.messages).toEqual([
@@ -504,7 +512,7 @@ describe('parseResponseBody', () => {
   })
 
   test('labels Responses function_call items as assistant and parses legacy shapes', () => {
-    const parsed = parseRequestBody(
+    const parsed = parseChatBody(
       JSON.stringify({
         model: 'gpt-5',
         input: [
@@ -535,7 +543,7 @@ describe('parseResponseBody', () => {
   })
 
   test('keeps Claude text documents and prefers the OpenAI parser for OpenAI-only shapes', () => {
-    const document = parseRequestBody(
+    const document = parseChatBody(
       JSON.stringify({
         system: 'sys',
         messages: [
@@ -558,7 +566,7 @@ describe('parseResponseBody', () => {
 
     // A `system` field alone must not route an OpenAI Chat body with
     // assistant tool_calls into the Claude parser.
-    const openai = parseRequestBody(
+    const openai = parseChatBody(
       JSON.stringify({
         system: 'ignored custom field',
         messages: [
@@ -705,5 +713,208 @@ describe('extractMessageImages', () => {
     expect(extractMessageImages(null)).toEqual([])
     expect(extractMessageImages('hello')).toEqual([])
     expect(extractMessageImages({ content: 'plain text only' })).toEqual([])
+  })
+})
+
+describe('parseRequestBody — generation requests', () => {
+  test('parses an image generation body into prompt and parameters', () => {
+    const parsed = parseRequestBody(
+      JSON.stringify({
+        model: 'doubao-seedream-5.0-lite',
+        prompt: 'A character sheet, 4 views',
+        response_format: 'url',
+        watermark: false,
+        size: '2K',
+      })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    expect(parsed.prompt).toBe('A character sheet, 4 views')
+    expect(parsed.params).toEqual([
+      { key: 'model', value: 'doubao-seedream-5.0-lite' },
+      { key: 'response_format', value: 'url' },
+      { key: 'watermark', value: 'false' },
+      { key: 'size', value: '2K' },
+    ])
+  })
+
+  test('parses a video task creation body with nested metadata', () => {
+    const parsed = parseRequestBody(
+      JSON.stringify({
+        model: 'doubao-seedance-2-0-mini-260615',
+        prompt: 'A cat walks across the room',
+        seconds: '5',
+        metadata: { resolution: '720p' },
+      })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    expect(parsed.prompt).toBe('A cat walks across the room')
+    expect(parsed.params[2]).toEqual({
+      key: 'metadata',
+      value: '{\n  "resolution": "720p"\n}',
+    })
+  })
+
+  test('keeps the legacy completions prompt unparseable as generation', () => {
+    expect(
+      parseRequestBody(
+        JSON.stringify({
+          model: 'gpt-3.5-turbo-instruct',
+          prompt: 'Say hi',
+          max_tokens: 16,
+        })
+      )
+    ).toBeNull()
+    // A prompt-only body without any generation parameter is not claimed.
+    expect(
+      parseRequestBody(JSON.stringify({ model: 'm', prompt: 'Say hi' }))
+    ).toBeNull()
+    // Non-string prompts (legacy array form) are not generation prompts.
+    expect(
+      parseRequestBody(
+        JSON.stringify({ model: 'm', prompt: ['Say hi'], size: '2K' })
+      )
+    ).toBeNull()
+    // An empty prompt is not a generation prompt even with image parameters.
+    expect(
+      parseRequestBody(JSON.stringify({ model: 'm', prompt: '', size: '2K' }))
+    ).toBeNull()
+    // A blank-string prompt is preserved as-is in the generation view.
+    const blank = parseRequestBody(
+      JSON.stringify({ model: 'm', prompt: '   ', size: '2K' })
+    )
+    expect(blank?.format).toBe('generation')
+    if (blank?.format !== 'generation') return
+    expect(blank.prompt).toBe('   ')
+  })
+
+  test('clips megabyte parameter values and marks them truncated', () => {
+    const parsed = parseRequestBody(
+      JSON.stringify({
+        model: 'doubao-seedance-2-0-mini-260615',
+        prompt: 'A cat walks',
+        seconds: '5',
+        // Image-to-video reference image: an inline base64 payload.
+        image: `data:image/png;base64,${'A'.repeat(5000)}`,
+      })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    const image = parsed.params.find((param) => param.key === 'image')
+    expect(image?.truncated).toBe(true)
+    expect(image?.value.length).toBe(2000)
+    expect(
+      parsed.params.find((param) => param.key === 'seconds')?.truncated
+    ).toBeUndefined()
+  })
+
+  test('a chat envelope wins over the prompt heuristic', () => {
+    const parsed = parseChatBody(
+      JSON.stringify({
+        model: 'gpt-4o',
+        prompt: 'ignored legacy field',
+        messages: [{ role: 'user', content: 'Hello' }],
+      })
+    )
+    expect(parsed?.format).toBe('openai')
+    expect(parsed?.messages).toHaveLength(1)
+  })
+})
+
+describe('matchesGenerationRequestPath', () => {
+  test('accepts generation endpoints and unknown paths', () => {
+    expect(matchesGenerationRequestPath('/v1/images/generations')).toBe(true)
+    expect(matchesGenerationRequestPath('/v1/video/generations')).toBe(true)
+    expect(matchesGenerationRequestPath('/v1/videos')).toBe(true)
+    expect(matchesGenerationRequestPath('/v1/videos/video_1/remix')).toBe(true)
+    // Older logs may not carry request_path at all; trust the body heuristic.
+    expect(matchesGenerationRequestPath(undefined)).toBe(true)
+  })
+
+  test('rejects chat and completion paths', () => {
+    expect(matchesGenerationRequestPath('/v1/chat/completions')).toBe(false)
+    expect(matchesGenerationRequestPath('/v1/completions')).toBe(false)
+    expect(matchesGenerationRequestPath('/v1/messages')).toBe(false)
+  })
+})
+
+describe('parseResponseBody — image generation', () => {
+  test('collects generated images from url entries', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        model: 'doubao-seedream-5.0-lite',
+        created: 1780921157,
+        data: [
+          { url: 'https://ark.example/a.jpeg', size: '3136x1344' },
+          { url: 'not-a-url', size: '1x1' },
+        ],
+        usage: { generated_images: 2 },
+      })
+    )
+    expect(parsed?.images).toEqual([{ url: 'https://ark.example/a.jpeg' }])
+    expect(parsed?.content).toBeUndefined()
+  })
+
+  test('turns b64_json payloads into sniffed data URIs', () => {
+    // node-verified magic prefixes: PNG 89504e47..., JPEG ffd8ff,
+    // WEBP (RIFF) 52494646, GIF8 47494638.
+    const cases = [
+      { prefix: 'iVBORw0KGgo', mediaType: 'image/png' },
+      { prefix: '/9j/', mediaType: 'image/jpeg' },
+      { prefix: 'UklGR', mediaType: 'image/webp' },
+      { prefix: 'R0lGOD', mediaType: 'image/gif' },
+      // Unrecognized magic falls back to image/png.
+      { prefix: 'AAAA', mediaType: 'image/png' },
+    ]
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        data: cases.map((entry) => ({ b64_json: entry.prefix })),
+      })
+    )
+    expect(parsed?.images).toEqual(
+      cases.map((entry) => ({
+        url: `data:${entry.mediaType};base64,${entry.prefix}`,
+        mediaType: entry.mediaType,
+      }))
+    )
+  })
+
+  test('still returns null for embedding data envelopes', () => {
+    expect(
+      parseResponseBody(
+        JSON.stringify({
+          data: [{ object: 'embedding', embedding: [0.1, 0.2] }],
+        })
+      )
+    ).toBeNull()
+  })
+})
+
+describe('parseResponseBody — task creation', () => {
+  test('parses the host fallback envelope with id and task_id', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({
+        id: 'task_abc',
+        task_id: 'task_abc',
+        status: 'queued',
+        model: 'doubao-seedance-2-0-mini-260615',
+        created_at: 1780921157,
+      })
+    )
+    expect(parsed?.task).toEqual({ id: 'task_abc', status: 'queued' })
+    expect(parsed?.images).toBeUndefined()
+  })
+
+  test('parses the openai_video envelope that only carries id', () => {
+    const parsed = parseResponseBody(
+      JSON.stringify({ id: 'task_xyz', status: 'completed', model: 'm' })
+    )
+    expect(parsed?.task).toEqual({ id: 'task_xyz', status: 'completed' })
+  })
+
+  test('returns null for id-only or status-only payloads', () => {
+    expect(parseResponseBody(JSON.stringify({ id: 'obj_1' }))).toBeNull()
+    expect(parseResponseBody(JSON.stringify({ status: 'queued' }))).toBeNull()
   })
 })
