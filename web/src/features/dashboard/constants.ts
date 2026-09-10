@@ -55,6 +55,9 @@ export const CONSUMPTION_DISTRIBUTION_CHART_OPTIONS = [
   { value: 'area', labelKey: 'Area Chart' },
 ] as const
 
+// 用量分析页两路查询（主窗口 / 近一年热力图）共享的 query key 根，供刷新按钮按前缀失效整页数据
+export const USAGE_ANALYTICS_QUERY_KEY_ROOT = 'usage-analytics'
+
 // 用量分析页（管理员）全局指标切换项，全页模块跟随联动
 export const USAGE_METRIC_OPTIONS = [
   { value: 'tokens', labelKey: 'Tokens' },

@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { Eye, EyeOff } from 'lucide-react'
-import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -38,6 +45,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
+import { UsageRefreshButton } from './components/usage/usage-refresh-button'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
   buildDefaultDashboardFilters,
@@ -348,19 +356,22 @@ export function Dashboard() {
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
           <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
-            {showSectionTabs ? (
-              <Tabs value={activeSection} onValueChange={handleSectionChange}>
-                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                  {visibleSections.map((section) => (
-                    <TabsTrigger key={section} value={section}>
-                      {t(SECTION_META[section].titleKey)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            ) : (
-              <div />
-            )}
+            <div className='flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2'>
+              {showSectionTabs ? (
+                <Tabs value={activeSection} onValueChange={handleSectionChange}>
+                  <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+                    {visibleSections.map((section) => (
+                      <TabsTrigger key={section} value={section}>
+                        {t(SECTION_META[section].titleKey)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              ) : (
+                <div />
+              )}
+              {activeSection === 'usage' && <UsageRefreshButton />}
+            </div>
             {sectionActions != null && (
               <div className='flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2'>
                 {sectionActions}

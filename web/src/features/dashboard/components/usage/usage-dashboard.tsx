@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getDailyQuotaDates } from '@/features/dashboard/api'
+import { USAGE_ANALYTICS_QUERY_KEY_ROOT } from '@/features/dashboard/constants'
 import {
   buildDailyModelSeries,
   buildModelColors,
@@ -76,7 +77,7 @@ export function UsageDashboard() {
   }, [rangeDays])
 
   const mainQuery = useQuery({
-    queryKey: ['usage-analytics-main', rangeDays, dayBucket],
+    queryKey: [USAGE_ANALYTICS_QUERY_KEY_ROOT, 'main', rangeDays, dayBucket],
     queryFn: async ({ signal }) => {
       const res = await getDailyQuotaDates(
         {
@@ -96,7 +97,7 @@ export function UsageDashboard() {
   })
 
   const yearQuery = useQuery({
-    queryKey: ['usage-analytics-year', dayBucket],
+    queryKey: [USAGE_ANALYTICS_QUERY_KEY_ROOT, 'year', dayBucket],
     queryFn: async ({ signal }) => {
       const res = await getDailyQuotaDates(
         {
