@@ -76,6 +76,33 @@ func SearchUserLogs(c *gin.Context) {
 	})
 }
 
+// GetAllLogModelNames 返回时间范围内有过请求记录的模型名(管理员,供 Log4 模型筛选下拉使用)
+func GetAllLogModelNames(c *gin.Context) {
+	logType, _ := strconv.Atoi(c.Query("type"))
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	modelNames, err := model.GetAllLogModelNames(logType, startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, modelNames)
+}
+
+// GetUserLogModelNames 返回当前用户时间范围内有过请求记录的模型名(供 Log4 模型筛选下拉使用)
+func GetUserLogModelNames(c *gin.Context) {
+	userId := c.GetInt("id")
+	logType, _ := strconv.Atoi(c.Query("type"))
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	modelNames, err := model.GetUserLogModelNames(userId, logType, startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, modelNames)
+}
+
 func GetLogByKey(c *gin.Context) {
 	tokenId := c.GetInt("token_id")
 	if tokenId == 0 {

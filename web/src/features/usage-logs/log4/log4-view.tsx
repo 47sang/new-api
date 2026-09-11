@@ -126,6 +126,7 @@ export function Log4View() {
         type={type}
         rangeId={rangeId}
         model={model}
+        isAdmin={isAdminView}
         isFetching={isFetching}
         onTypeChange={handleTypeChange}
         onRangeChange={handleRangeChange}

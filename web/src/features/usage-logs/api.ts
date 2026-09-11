@@ -23,6 +23,8 @@ import { parseTaskArtifactsResponse } from './lib/task-artifacts'
 import type {
   GetLogsParams,
   GetLogsResponse,
+  GetLogModelNamesParams,
+  GetLogModelNamesResponse,
   GetLogStatsParams,
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
@@ -86,6 +88,25 @@ export const getLogStats = (params: GetLogStatsParams = {}) =>
 export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
 ) => fetchLogStats('/api/log', params, false)
+
+/** 查询时间范围内有过请求记录的模型名,用于模型筛选下拉 */
+async function fetchLogModelNames(
+  params: GetLogModelNamesParams,
+  isAdmin: boolean
+): Promise<GetLogModelNamesResponse> {
+  const queryParams = buildQueryParams(
+    params as unknown as Record<string, unknown>
+  )
+  const path = buildApiPath('/api/log/models', isAdmin)
+  const res = await api.get(`${path}?${queryParams}`)
+  return res.data
+}
+
+export const getAllLogModelNames = (params: GetLogModelNamesParams = {}) =>
+  fetchLogModelNames(params, true)
+
+export const getUserLogModelNames = (params: GetLogModelNamesParams = {}) =>
+  fetchLogModelNames(params, false)
 
 export async function getUserInfo(
   userId: number

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, X } from 'lucide-react'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -35,24 +35,38 @@ interface ComboboxInputProps {
   options: readonly ComboboxInputOption[]
   value?: string
   onValueChange: (value: string) => void
+  /**
+   * 明确的"选中"动作回调(点选下拉项、Enter 提交、清除),区别于
+   * onValueChange——后者在 allowCustomValue 输入过程中也会逐字触发。
+   * 参数为最终生效的值,便于调用方在草稿状态下直接应用。
+   */
+  onSelect?: (value: string) => void
+  onBlur?: React.FocusEventHandler<HTMLInputElement>
   placeholder?: string
   emptyText?: string
   className?: string
   id?: string
   allowCustomValue?: boolean
   openOnFocus?: boolean
+  /** 有值时在输入框右侧显示清除按钮,点击后回调 onSelect('') */
+  showClear?: boolean
+  'aria-label'?: string
 }
 
 export function ComboboxInput({
   options,
   value = '',
   onValueChange,
+  onSelect,
+  onBlur,
   placeholder = 'Select or type...',
   emptyText = 'No option found.',
   className,
   id,
   allowCustomValue = false,
   openOnFocus = true,
+  showClear = false,
+  'aria-label': ariaLabel,
 }: ComboboxInputProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
@@ -103,9 +117,23 @@ export function ComboboxInput({
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
+    onSelect?.(selectedValue)
+    // Focus first: when the input does not hold focus yet, the focus event's
+    // open/restore handlers queue stale state that the close/reset below must
+    // override, so the committed selection survives the commit.
+    inputRef.current?.focus()
     setOpen(false)
     setSearchValue('')
+  }
+
+  const handleClear = () => {
+    onValueChange('')
+    onSelect?.('')
+    // Same ordering as handleSelect: the reset below must win over the
+    // state queued by a genuine focus event.
     inputRef.current?.focus()
+    setOpen(true)
+    setSearchValue('')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -171,6 +199,7 @@ export function ComboboxInput({
         aria-expanded={open}
         aria-haspopup='listbox'
         aria-autocomplete='list'
+        aria-label={ariaLabel}
         autoComplete='off'
         placeholder={placeholder}
         value={displayValue}
@@ -195,10 +224,23 @@ export function ComboboxInput({
           }
           pointerFocusRef.current = false
         }}
+        onBlur={onBlur}
         onKeyDown={handleKeyDown}
         className={cn('pr-9', className)}
       />
-      <ChevronsUpDown className='pointer-events-none absolute top-1/2 right-3 size-4 shrink-0 -translate-y-1/2 opacity-50' />
+      {showClear && displayValue ? (
+        <button
+          type='button'
+          aria-label={t('Clear')}
+          className='hover:bg-muted absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm opacity-50 transition-colors hover:opacity-100'
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handleClear}
+        >
+          <X className='size-4 shrink-0' aria-hidden='true' />
+        </button>
+      ) : (
+        <ChevronsUpDown className='pointer-events-none absolute top-1/2 right-3 size-4 shrink-0 -translate-y-1/2 opacity-50' />
+      )}
 
       {showDropdown && (
         <div className='bg-popover text-popover-foreground absolute top-full z-100 mt-1 w-full rounded-md border shadow-md'>

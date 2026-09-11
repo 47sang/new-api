@@ -622,6 +622,44 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
+// logModelNameListLimit 限制模型名列表的最大返回条数,防止模型种类过多时下拉列表过大
+const logModelNameListLimit = 1000
+
+// queryLogModelNames 在 tx 基础上追加类型与时间窗过滤,返回去重后的非空模型名(升序)。
+// 供 Log4 模型筛选下拉动态查询"最近一段时间内有哪些模型有过请求记录"。
+func queryLogModelNames(tx *gorm.DB, logType int, startTimestamp int64, endTimestamp int64) ([]string, error) {
+	if logType != LogTypeUnknown {
+		tx = tx.Where("type = ?", logType)
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+	modelNames := make([]string, 0)
+	err := tx.Table("logs").
+		Where("model_name != ''").
+		Distinct("model_name").
+		Order("model_name").
+		Limit(logModelNameListLimit).
+		Pluck("model_name", &modelNames).Error
+	if err != nil {
+		return nil, err
+	}
+	return modelNames, nil
+}
+
+// GetAllLogModelNames 返回时间范围内有过请求记录的模型名(全部用户,去重升序)
+func GetAllLogModelNames(logType int, startTimestamp int64, endTimestamp int64) ([]string, error) {
+	return queryLogModelNames(LOG_DB, logType, startTimestamp, endTimestamp)
+}
+
+// GetUserLogModelNames 返回指定用户在时间范围内有过请求记录的模型名(去重升序)
+func GetUserLogModelNames(userId int, logType int, startTimestamp int64, endTimestamp int64) ([]string, error) {
+	return queryLogModelNames(LOG_DB.Where("user_id = ?", userId), logType, startTimestamp, endTimestamp)
+}
+
 type Stat struct {
 	Quota int `json:"quota"`
 	Rpm   int `json:"rpm"`

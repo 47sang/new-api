@@ -70,3 +70,54 @@ func TestVacuumLogDatabaseSkipsNonSQLiteLogDB(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, vacuumed)
 }
+
+// TestLogModelNamesDedupedAndFiltered 回归验证:模型名列表接口必须去重、剔除空模型名,
+// 并按类型与时间窗过滤,供 Log4 模型筛选下拉使用;窗口外的请求记录不得泄漏进结果
+func TestLogModelNamesDedupedAndFiltered(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "log.db")), &gorm.Config{})
+	require.NoError(t, err)
+
+	previousDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = previousDB })
+
+	require.NoError(t, db.AutoMigrate(&Log{}))
+
+	const windowStart int64 = 1000
+	const windowEnd int64 = 2000
+	logs := []*Log{
+		{UserId: 1, CreatedAt: 1500, Type: LogTypeConsume, ModelName: "gpt-4o"},
+		// 同模型重复请求只保留一个模型名
+		{UserId: 1, CreatedAt: 1600, Type: LogTypeConsume, ModelName: "gpt-4o"},
+		{UserId: 1, CreatedAt: 1700, Type: LogTypeConsume, ModelName: "glm-5.3-flash"},
+		// 空模型名必须被剔除
+		{UserId: 1, CreatedAt: 1800, Type: LogTypeConsume, ModelName: ""},
+		// 窗口外的记录不计入
+		{UserId: 1, CreatedAt: 500, Type: LogTypeConsume, ModelName: "out-of-window"},
+		// 类型过滤命中前的记录
+		{UserId: 1, CreatedAt: 1900, Type: LogTypeError, ModelName: "error-only"},
+	}
+	require.NoError(t, db.Create(&logs).Error)
+
+	// 全类型查询包含窗口内的错误日志记录
+	all, err := GetAllLogModelNames(LogTypeUnknown, windowStart, windowEnd)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"error-only", "glm-5.3-flash", "gpt-4o"}, all)
+
+	consume, err := GetAllLogModelNames(LogTypeConsume, windowStart, windowEnd)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"glm-5.3-flash", "gpt-4o"}, consume)
+
+	userModels, err := GetUserLogModelNames(1, LogTypeConsume, windowStart, windowEnd)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"glm-5.3-flash", "gpt-4o"}, userModels)
+
+	otherUser, err := GetUserLogModelNames(2, LogTypeConsume, windowStart, windowEnd)
+	require.NoError(t, err)
+	assert.Empty(t, otherUser)
+
+	// 不传时间窗时返回全部模型名
+	noWindow, err := GetAllLogModelNames(LogTypeUnknown, 0, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"error-only", "glm-5.3-flash", "gpt-4o", "out-of-window"}, noWindow)
+}

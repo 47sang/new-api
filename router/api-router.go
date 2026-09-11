@@ -311,6 +311,9 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
+		// 模型筛选下拉:查询时间范围内有过请求记录的模型名
+		logRoute.GET("/models", middleware.AdminAuth(), controller.GetAllLogModelNames)
+		logRoute.GET("/self/models", middleware.UserAuth(), controller.GetUserLogModelNames)
 		// 请求/响应日志详情
 		logRoute.GET("/:id/request-response", middleware.AdminAuth(), controller.GetRequestResponseByLogId)
 		logRoute.GET("/self/request-response", middleware.UserAuth(), controller.GetRequestResponseSelfRequestId)

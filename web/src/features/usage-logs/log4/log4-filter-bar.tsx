@@ -19,13 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 /**
  * Compact filter bar for the Log4 view: log type, time-range preset, model
  * name and a refresh action. Type and range apply immediately; the model
- * input applies on Enter.
+ * input applies on Enter, on blur, or when an option is picked from the
+ * dropdown. The dropdown is fed by the log model-names endpoint (models with
+ * request records inside the selected time range) and filtered client-side
+ * by substring, so a partial model name is enough to narrow it down.
  */
+import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { ComboboxInput } from '@/components/ui/combobox-input'
 import {
   Select,
   SelectContent,
@@ -35,22 +40,31 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import {
-  LogsFilterField,
-  LogsFilterInput,
-} from '../components/logs-filter-toolbar'
+import { getAllLogModelNames, getUserLogModelNames } from '../api'
+import { LogsFilterField } from '../components/logs-filter-toolbar'
 import { LOG_TYPE_FILTERS } from '../constants'
-import { LOG4_TIME_RANGE_PRESETS, type Log4TimeRangeId } from './lib'
+import type { GetLogModelNamesParams } from '../types'
+import {
+  LOG4_TIME_RANGE_PRESETS,
+  resolveLog4TimeRange,
+  type Log4TimeRangeId,
+} from './lib'
 
 interface Log4FilterBarProps {
   type: string
   rangeId: Log4TimeRangeId
   model: string
+  /** True queries the admin model-names endpoint (all users' logs) */
+  isAdmin: boolean
   isFetching: boolean
   onTypeChange: (type: string) => void
   onRangeChange: (rangeId: Log4TimeRangeId) => void
   onModelApply: (model: string) => void
   onRefresh: () => void
+}
+
+function toSeconds(ms: number | undefined): number | undefined {
+  return ms != null ? Math.floor(ms / 1000) : undefined
 }
 
 /**
@@ -59,6 +73,7 @@ interface Log4FilterBarProps {
  * @param props.type - Current log type filter value ('0' = all types)
  * @param props.rangeId - Current time-range preset id
  * @param props.model - Applied model name filter
+ * @param props.isAdmin - True uses GET /api/log/models, false the /self variant
  * @param props.isFetching - Whether any Log4 page request is in flight
  * @param props.onTypeChange - Called with the selected log type value
  * @param props.onRangeChange - Called with the selected time-range preset id
@@ -68,6 +83,8 @@ interface Log4FilterBarProps {
 export function Log4FilterBar(props: Log4FilterBarProps) {
   const { t } = useTranslation()
   const [modelDraft, setModelDraft] = useState(props.model)
+  // Fetch the model-name suggestions only while the model input is focused.
+  const [modelFieldFocused, setModelFieldFocused] = useState(false)
 
   // Re-sync the draft when the applied filter changes elsewhere
   // (e.g. browser back/forward).
@@ -93,6 +110,41 @@ export function Log4FilterBar(props: Log4FilterBarProps) {
   const applyModel = () => {
     props.onModelApply(modelDraft.trim())
   }
+
+  const modelNamesQuery = useQuery({
+    queryKey: [
+      'usage-logs-log4-model-names',
+      props.isAdmin,
+      props.type,
+      props.rangeId,
+    ],
+    enabled: modelFieldFocused,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const resolved = resolveLog4TimeRange(props.rangeId)
+      const params: GetLogModelNamesParams = {
+        type: props.type,
+        start_timestamp: toSeconds(resolved.startTime),
+        end_timestamp: toSeconds(resolved.endTime),
+      }
+      const result = props.isAdmin
+        ? await getAllLogModelNames(params)
+        : await getUserLogModelNames(params)
+      if (!result?.success) {
+        throw new Error(result?.message || t('Failed to load logs'))
+      }
+      return result.data ?? []
+    },
+  })
+
+  const modelOptions = useMemo(
+    () =>
+      (modelNamesQuery.data ?? []).map((name) => ({
+        value: name,
+        label: name,
+      })),
+    [modelNamesQuery.data]
+  )
 
   return (
     <div className='flex flex-wrap items-center gap-2'>
@@ -142,16 +194,27 @@ export function Log4FilterBar(props: Log4FilterBarProps) {
           </SelectContent>
         </Select>
       </LogsFilterField>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Model Name')}
-          value={modelDraft}
-          onChange={(e) => setModelDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') applyModel()
-          }}
-          onBlur={applyModel}
-        />
+      <LogsFilterField className='w-56'>
+        {/* focus capture wrapper: fetch suggestions only while the input is
+            focused, without teaching LogsFilterField about query state */}
+        <div
+          onFocusCapture={() => setModelFieldFocused(true)}
+          onBlurCapture={() => setModelFieldFocused(false)}
+        >
+          <ComboboxInput
+            options={modelOptions}
+            value={modelDraft}
+            onValueChange={setModelDraft}
+            onSelect={(value) => props.onModelApply(value.trim())}
+            onBlur={applyModel}
+            showClear
+            allowCustomValue
+            placeholder={t('Model Name')}
+            aria-label={t('Model Name')}
+            emptyText={t('No results found')}
+            className='w-full'
+          />
+        </div>
       </LogsFilterField>
       <Button
         variant='outline'

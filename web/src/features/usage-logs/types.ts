@@ -405,6 +405,18 @@ export interface GetLogsResponse {
   }
 }
 
+export interface GetLogModelNamesParams {
+  type?: string
+  start_timestamp?: number
+  end_timestamp?: number
+}
+
+export interface GetLogModelNamesResponse {
+  success: boolean
+  message?: string
+  data?: string[]
+}
+
 export interface GetLogStatsParams {
   type?: number
   username?: string
