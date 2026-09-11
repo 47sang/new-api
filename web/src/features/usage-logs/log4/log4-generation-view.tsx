@@ -20,6 +20,11 @@ For commercial licensing, please contact support@quantumnous.com
  * Input tab of the Log4 detail dialog for prompt-style generation requests
  * (image generation, video task creation): the full prompt text plus the
  * remaining request parameters, instead of the chat message browser.
+ *
+ * The layout stacks vertically — full-width prompt on top, model/cost stat
+ * card below it, then the remaining parameters — so long parameter values
+ * (metadata JSON that embeds the whole prompt, inline reference images)
+ * never wrap inside a narrow side column.
  */
 import { useTranslation } from 'react-i18next'
 
@@ -32,6 +37,14 @@ import type { LogOtherData } from '../types'
 import { StatRow } from './log4-request-view'
 import type { ParsedGenerationRequest } from './request-body'
 
+/**
+ * Length above which a generation parameter value stops rendering as a
+ * single stat line and gets its own full-width collapsible block. Long
+ * pretty-printed JSON (video metadata embedding the whole prompt) and
+ * inline base64 reference images exceed it by orders of magnitude.
+ */
+const MAX_SINGLE_LINE_PARAM_LENGTH = 80
+
 /** Input tab for generation requests: prompt + parameters + cost facts. */
 export function Log4GenerationView(props: {
   request: ParsedGenerationRequest
@@ -40,53 +53,75 @@ export function Log4GenerationView(props: {
 }) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
-  const params = props.request.params
+  // The stat card shows the billed model (log.model_name); the request's
+  // own model param is only hidden when it says the same thing, so a
+  // redirected request still surfaces the model the client asked for.
+  const params = props.request.params.filter(
+    (param) =>
+      !(param.key === 'model' && param.value === props.log.model_name)
+  )
 
   return (
     <div className='h-full min-h-0 space-y-3 overflow-y-auto pr-1'>
-      <div className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]'>
-        <JsonBlock
-          label={t('Prompt')}
-          content={props.request.prompt}
-          copiedText={copiedText}
-          copyToClipboard={copyToClipboard}
-        />
-        <div className='flex min-w-0 flex-col gap-3'>
-          <div className='bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3'>
-            <StatRow label={t('Model')}>{props.log.model_name}</StatRow>
-            <StatRow label={t('Cost')}>
-              <LogCostDisplay quota={props.log.quota} other={props.other} />
-            </StatRow>
-          </div>
-          {params.length > 0 && (
-            <div className='bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3'>
-              <span className='text-muted-foreground text-xs font-semibold'>
-                {t('Parameters')}
-              </span>
-              {params.map((param) => (
+      <JsonBlock
+        label={t('Prompt')}
+        content={props.request.prompt}
+        copiedText={copiedText}
+        copyToClipboard={copyToClipboard}
+      />
+      <div className='bg-muted/30 grid gap-1.5 rounded-lg border p-3 sm:grid-cols-2'>
+        <StatRow label={t('Model')}>
+          <span title={props.log.model_name}>{props.log.model_name}</span>
+        </StatRow>
+        <StatRow label={t('Cost')}>
+          <LogCostDisplay quota={props.log.quota} other={props.other} />
+        </StatRow>
+      </div>
+      {params.length > 0 && (
+        <div className='space-y-2'>
+          <span className='text-muted-foreground text-xs font-semibold'>
+            {t('Parameters')}
+          </span>
+          {params.map((param) => {
+            const isBlockValue =
+              param.value.length > MAX_SINGLE_LINE_PARAM_LENGTH ||
+              param.value.includes('\n')
+            if (!isBlockValue) {
+              return (
                 <div
                   key={param.key}
-                  className='flex flex-col gap-0.5 text-xs sm:flex-row sm:items-baseline sm:justify-between sm:gap-2'
+                  className='flex items-baseline justify-between gap-2 text-xs'
                 >
                   <span className='text-muted-foreground shrink-0 font-mono'>
                     {param.key}
                   </span>
-                  <span className='min-w-0 text-right font-mono break-all whitespace-pre-wrap'>
+                  <span className='min-w-0 text-right font-mono break-all'>
                     {param.value}
-                    {param.truncated && (
-                      <span className='text-muted-foreground block text-left sm:text-right'>
-                        {t(
-                          '… truncated — check the raw tab for the full value'
-                        )}
-                      </span>
-                    )}
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
+              )
+            }
+            // Long values (pretty-printed JSON objects, clipped inline
+            // image payloads) get a full-width collapsible block — the
+            // JsonBlock caps the height and offers Expand/Copy.
+            return (
+              <div key={param.key} className='space-y-1'>
+                <JsonBlock
+                  label={param.key}
+                  content={param.value}
+                  copiedText={copiedText}
+                  copyToClipboard={copyToClipboard}
+                />
+                {param.truncated && (
+                  <div className='text-muted-foreground text-xs'>
+                    {t('… truncated — check the raw tab for the full value')}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
-      </div>
+      )}
     </div>
   )
 }

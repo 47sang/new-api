@@ -466,6 +466,120 @@ describe('Log4DetailDialog', () => {
     ).toBeNull()
   })
 
+  test('stacks the video generation input vertically and folds long parameters', async () => {
+    const videoPrompt = 'You are a professional video director.'
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: JSON.stringify({
+          model: 'doubao-seedance-2-0-mini-260615',
+          prompt: videoPrompt,
+          seconds: 7,
+          image: `data:image/png;base64,${'A'.repeat(3000)}`,
+          metadata: {
+            content: [{ type: 'text', text: videoPrompt }],
+          },
+        }),
+        response_body: '',
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    renderDialog({
+      log: buildLog({ model_name: 'doubao-seedance-2-0-mini-260615' }),
+      isAdmin: true,
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText(videoPrompt)).toBeInTheDocument()
+    )
+
+    // Vertical stack: the prompt block first, then the model/cost stat
+    // card, then the parameter area. The prompt block is located through
+    // its <pre> (the dialog title reads "Prompt" too).
+    const promptPre = screen.getByText(
+      (_, element) =>
+        element?.tagName === 'PRE' && (element.textContent ?? '') === videoPrompt
+    )
+    const modelStat = screen.getByText('Model')
+    const paramsLabel = screen.getByText('Parameters')
+    expect(
+      promptPre.compareDocumentPosition(modelStat) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      modelStat.compareDocumentPosition(paramsLabel) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    // Both blocks hang directly off the same vertical-stack root; linear
+    // order alone cannot tell a two-column grid from a vertical stack.
+    const promptBlockRoot =
+      promptPre.parentElement?.parentElement?.parentElement
+    expect(
+      modelStat.closest('div')?.parentElement?.parentElement
+    ).toBe(promptBlockRoot)
+
+    // Same-value request model: the billed model shows once in the stat
+    // card and the model key does not repeat as a parameter row.
+    expect(
+      screen.getByText('doubao-seedance-2-0-mini-260615')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('model')).toBeNull()
+
+    // The long metadata JSON renders as its own collapsible <pre> block
+    // instead of a single-line value squeezed into a stat row.
+    const metadataPre = screen.getByText(
+      (_, element) =>
+        element?.tagName === 'PRE' &&
+        (element.textContent ?? '').includes('"content"')
+    )
+    expect(metadataPre).toBeInTheDocument()
+
+    // Clipped inline base64 keeps the truncation hint under its block and
+    // is height-capped with an Expand toggle instead of sprawling.
+    expect(
+      screen.getByText(/truncated — check the raw tab for the full value/)
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeInTheDocument()
+  })
+
+  test('keeps the requested model parameter when it differs from the billed model', async () => {
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: JSON.stringify({
+          model: 'doubao-seedance-2-0-mini-260615',
+          prompt: 'A cat walks across the room',
+          seconds: 7,
+        }),
+        response_body: '',
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    renderDialog({ log: buildLog({ model_name: 'upstream-redirected' }), isAdmin: true })
+
+    await waitFor(() =>
+      expect(screen.getByText('A cat walks across the room')).toBeInTheDocument()
+    )
+    // Redirected request: the billed model in the stat card and the model
+    // the client actually asked for in the parameter list both stay
+    // visible.
+    expect(screen.getByText('upstream-redirected')).toBeInTheDocument()
+    expect(
+      screen.getByText('doubao-seedance-2-0-mini-260615')
+    ).toBeInTheDocument()
+  })
+
   test('shows the task id on the output tab for a video task creation', async () => {
     const writeText = vi
       .spyOn(navigator.clipboard, 'writeText')

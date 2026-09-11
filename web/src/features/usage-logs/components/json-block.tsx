@@ -35,8 +35,13 @@ export function JsonBlock(props: {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const maxPreviewLines = 50
+  // Character count at which content is capped even when it has few
+  // physical lines: a clipped base64 payload or a JSON blob whose values
+  // embed long text stays at 1–20 wrapped lines yet scrolls for screens.
+  const maxPreviewChars = 2000
   const lines = props.content.split('\n')
-  const isLong = lines.length > maxPreviewLines
+  const isLong =
+    lines.length > maxPreviewLines || props.content.length >= maxPreviewChars
 
   return (
     <div className={cn('space-y-1.5', props.className)}>
