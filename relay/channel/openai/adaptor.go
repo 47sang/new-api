@@ -51,6 +51,11 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 	if !ok {
 		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
 	}
+	if info.SupportStreamOptions && info.IsStream {
+		openaiRequest.StreamOptions = &dto.StreamOptions{
+			IncludeUsage: true,
+		}
+	}
 	return a.ConvertOpenAIRequest(c, info, openaiRequest)
 }
 
@@ -105,12 +110,12 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	if info.RelayMode == relayconstant.RelayModeRealtime {
-		if strings.HasPrefix(info.ChannelBaseUrl, "https://") {
-			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "https://")
+		if after, ok := strings.CutPrefix(info.ChannelBaseUrl, "https://"); ok {
+			baseUrl := after
 			baseUrl = "wss://" + baseUrl
 			info.ChannelBaseUrl = baseUrl
-		} else if strings.HasPrefix(info.ChannelBaseUrl, "http://") {
-			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "http://")
+		} else if after, ok := strings.CutPrefix(info.ChannelBaseUrl, "http://"); ok {
+			baseUrl := after
 			baseUrl = "ws://" + baseUrl
 			info.ChannelBaseUrl = baseUrl
 		}
