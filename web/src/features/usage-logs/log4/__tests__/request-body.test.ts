@@ -795,18 +795,62 @@ describe('parseRequestBody — generation requests', () => {
         model: 'doubao-seedance-2-0-mini-260615',
         prompt: 'A cat walks',
         seconds: '5',
-        // Image-to-video reference image: an inline base64 payload.
-        image: `data:image/png;base64,${'A'.repeat(5000)}`,
+        // Video metadata embedding a huge payload stays a text parameter.
+        metadata: { payload: 'A'.repeat(5000) },
       })
     )
     expect(parsed?.format).toBe('generation')
     if (parsed?.format !== 'generation') return
-    const image = parsed.params.find((param) => param.key === 'image')
-    expect(image?.truncated).toBe(true)
-    expect(image?.value.length).toBe(2000)
+    const metadata = parsed.params.find((param) => param.key === 'metadata')
+    expect(metadata?.truncated).toBe(true)
+    expect(metadata?.value.length).toBe(2000)
     expect(
       parsed.params.find((param) => param.key === 'seconds')?.truncated
     ).toBeUndefined()
+  })
+
+  test('extracts image parameters into previewable attachments', () => {
+    const parsed = parseRequestBody(
+      JSON.stringify({
+        prompt: 'Make the CRT monitor an LCD panel',
+        image: 'https://assets.example.com/first.jpg',
+        images: ['https://assets.example.com/second.jpg', 'file_nope'],
+        watermark: false,
+      })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    expect(parsed.images).toEqual([
+      { url: 'https://assets.example.com/first.jpg' },
+      { url: 'https://assets.example.com/second.jpg' },
+    ])
+    // Image parameters with renderable values move to the attachment
+    // area entirely instead of staying in the text parameter list.
+    expect(parsed.params.map((param) => param.key)).toEqual(['watermark'])
+  })
+
+  test('extracts inline base64 image payloads as data-URI attachments', () => {
+    const payload = `data:image/png;base64,${'A'.repeat(5000)}`
+    const parsed = parseRequestBody(
+      JSON.stringify({ prompt: 'A cat walks', image: payload })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    expect(parsed.images).toEqual([{ url: payload }])
+    expect(parsed.params).toEqual([])
+  })
+
+  test('keeps image parameters without renderable values as text', () => {
+    const parsed = parseRequestBody(
+      JSON.stringify({ prompt: 'A cat', image: 'file_abc123', size: '2K' })
+    )
+    expect(parsed?.format).toBe('generation')
+    if (parsed?.format !== 'generation') return
+    expect(parsed.images).toEqual([])
+    expect(parsed.params).toEqual([
+      { key: 'image', value: 'file_abc123' },
+      { key: 'size', value: '2K' },
+    ])
   })
 
   test('a chat envelope wins over the prompt heuristic', () => {

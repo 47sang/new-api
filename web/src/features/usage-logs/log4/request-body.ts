@@ -76,8 +76,17 @@ export interface ParsedGenerationRequest {
    * Remaining top-level request parameters (model, size, seconds, ...).
    * `truncated` marks values clipped to MAX_GENERATION_PARAM_LENGTH —
    * inline base64 payloads can be megabytes and would freeze the pane.
+   * Image-carrying parameters with renderable values are moved to
+   * `images` instead of staying here.
    */
   params: Array<{ key: string; value: string; truncated?: boolean }>
+  /**
+   * Renderable reference images extracted from the dedicated image
+   * parameters (image / images / input_reference), in document order.
+   * Rendered as attachment thumbnails with the same lightbox preview as
+   * the output tab.
+   */
+  images: ParsedMessageImage[]
 }
 
 /** True when the parsed request is a generation request, not a chat one. */
@@ -747,6 +756,18 @@ const GENERATION_PARAM_KEYS = new Set([
 ])
 
 /**
+ * Generation parameter keys whose values carry reference images (video
+ * task submit: a URL string, an array of them, or an inline base64/data
+ * URI payload). Values yielding at least one renderable image are pulled
+ * out of `params` and shown as attachment thumbnails instead.
+ */
+const GENERATION_IMAGE_PARAM_KEYS = new Set([
+  'image',
+  'images',
+  'input_reference',
+])
+
+/**
  * Parameter keys of the legacy /v1/completions endpoint, which also sends a
  * top-level `prompt`. Those requests keep falling through to the unparsed
  * view instead of being presented as generation prompts.
@@ -784,6 +805,40 @@ function formatGenerationParamValue(value: unknown): string {
 const MAX_GENERATION_PARAM_LENGTH = 2000
 
 /**
+ * Collect the renderable images of one generation image-parameter value:
+ * a URL/data-URI string, an array of such values, or an object carrying
+ * `b64_json` / `url` (the payload shapes the response side accepts).
+ * collectImage skips non-renderable references (file ids), so a value
+ * holding none leaves the parameter as a plain text entry.
+ */
+function collectGenerationParamImages(
+  value: unknown,
+  images: ParsedMessageImage[],
+  depth: number
+): void {
+  if (depth > MAX_IMAGE_WALK_DEPTH || value == null) return
+  if (typeof value === 'string') {
+    collectImage(images, value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectGenerationParamImages(item, images, depth + 1)
+    }
+    return
+  }
+  const record = asRecord(value)
+  if (!record) return
+  const b64 = asString(record.b64_json)
+  if (b64) {
+    const mediaType = sniffImageMediaType(b64)
+    collectImage(images, `data:${mediaType};base64,${b64}`, mediaType)
+    return
+  }
+  collectImage(images, record.url)
+}
+
+/**
  * Parse a prompt-style generation request body (image generation, video
  * task creation): a top-level string `prompt`, no chat envelope
  * (messages/contents/input), at least one generation parameter, and no
@@ -811,22 +866,31 @@ function parseGenerationRequest(
     if (GENERATION_PARAM_KEYS.has(key)) hasGenerationParam = true
   }
   if (!hasGenerationParam) return null
-  const params = Object.keys(record)
-    .filter((key) => key !== 'prompt')
-    .map((key) => {
-      const value = formatGenerationParamValue(record[key])
-      // Inline base64 payloads (image-to-video reference images) reach
-      // megabytes; clip them so rendering the params card stays cheap.
-      if (value.length > MAX_GENERATION_PARAM_LENGTH) {
-        return {
-          key,
-          value: value.slice(0, MAX_GENERATION_PARAM_LENGTH),
-          truncated: true,
-        }
-      }
-      return { key, value }
-    })
-  return { format: 'generation', prompt, params }
+  const images: ParsedMessageImage[] = []
+  const params: ParsedGenerationRequest['params'] = []
+  for (const key of Object.keys(record)) {
+    if (key === 'prompt') continue
+    // Image-carrying parameters render as attachment thumbnails; a value
+    // with no renderable image (e.g. a file id) stays a text parameter.
+    if (GENERATION_IMAGE_PARAM_KEYS.has(key)) {
+      const before = images.length
+      collectGenerationParamImages(record[key], images, 0)
+      if (images.length > before) continue
+    }
+    const value = formatGenerationParamValue(record[key])
+    // Inline base64 payloads (reference images inside metadata blobs)
+    // reach megabytes; clip them so rendering the params card stays cheap.
+    if (value.length > MAX_GENERATION_PARAM_LENGTH) {
+      params.push({
+        key,
+        value: value.slice(0, MAX_GENERATION_PARAM_LENGTH),
+        truncated: true,
+      })
+    } else {
+      params.push({ key, value })
+    }
+  }
+  return { format: 'generation', prompt, params, images }
 }
 
 /**

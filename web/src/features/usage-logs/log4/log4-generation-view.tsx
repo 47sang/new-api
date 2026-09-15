@@ -18,12 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 /**
  * Input tab of the Log4 detail dialog for prompt-style generation requests
- * (image generation, video task creation): the full prompt text plus the
- * remaining request parameters, instead of the chat message browser.
- *
- * The layout stacks vertically — full-width prompt on top, model/cost stat
- * card below it, then the remaining parameters — so long parameter values
- * (metadata JSON that embeds the whole prompt, inline reference images)
+ * (image generation, video task creation). The layout mirrors the chat
+ * input tab: the model/cost facts and the remaining request parameters on
+ * top, the full prompt text below them, then reference images as
+ * attachment thumbnails sharing the output tab's lightbox preview — so
+ * long parameter values (metadata JSON that embeds the whole prompt)
  * never wrap inside a narrow side column.
  */
 import { useTranslation } from 'react-i18next'
@@ -34,6 +33,7 @@ import { JsonBlock } from '../components/json-block'
 import { LogCostDisplay } from '../components/log-cost-display'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
+import { Log4ImageGallery } from './log4-image-viewer'
 import { StatRow } from './log4-request-view'
 import type { ParsedGenerationRequest } from './request-body'
 
@@ -45,7 +45,7 @@ import type { ParsedGenerationRequest } from './request-body'
  */
 const MAX_SINGLE_LINE_PARAM_LENGTH = 80
 
-/** Input tab for generation requests: prompt + parameters + cost facts. */
+/** Input tab for generation requests: cost facts + parameters + prompt. */
 export function Log4GenerationView(props: {
   request: ParsedGenerationRequest
   log: UsageLog
@@ -57,18 +57,13 @@ export function Log4GenerationView(props: {
   // own model param is only hidden when it says the same thing, so a
   // redirected request still surfaces the model the client asked for.
   const params = props.request.params.filter(
-    (param) =>
-      !(param.key === 'model' && param.value === props.log.model_name)
+    (param) => !(param.key === 'model' && param.value === props.log.model_name)
   )
 
   return (
     <div className='h-full min-h-0 space-y-3 overflow-y-auto pr-1'>
-      <JsonBlock
-        label={t('Prompt')}
-        content={props.request.prompt}
-        copiedText={copiedText}
-        copyToClipboard={copyToClipboard}
-      />
+      {/* Model/cost facts lead, mirroring the chat input tab's stats
+          header so both input layouts read the same way. */}
       <div className='bg-muted/30 grid gap-1.5 rounded-lg border p-3 sm:grid-cols-2'>
         <StatRow label={t('Model')}>
           <span title={props.log.model_name}>{props.log.model_name}</span>
@@ -120,6 +115,25 @@ export function Log4GenerationView(props: {
               </div>
             )
           })}
+        </div>
+      )}
+      <JsonBlock
+        label={t('Prompt')}
+        content={props.request.prompt}
+        copiedText={copiedText}
+        copyToClipboard={copyToClipboard}
+      />
+      {props.request.images.length > 0 && (
+        <div className='space-y-1.5'>
+          <span className='text-muted-foreground text-xs font-semibold'>
+            {t('Reference Images')}
+          </span>
+          {/* Same gallery as the output tab: thumbnails open the shared
+              fullscreen lightbox preview. */}
+          <Log4ImageGallery
+            images={props.request.images}
+            thumbnailClassName='size-32'
+          />
         </div>
       )}
     </div>
