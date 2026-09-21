@@ -23,6 +23,12 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { USAGE_HEATMAP_LEVEL_CLASSES } from '@/features/dashboard/constants'
 import {
   buildHeatmapGrid,
@@ -141,98 +147,116 @@ export function UsageActivityHeatmap(props: UsageActivityHeatmapProps) {
       </div>
 
       {grid && (
-        <div className='mt-4 overflow-x-auto pb-1'>
-          <div
-            className='inline-flex min-w-max flex-col gap-1'
-            role='group'
-            aria-label={t('Daily activity heatmap')}
-          >
-            {/* 月份标签行：与周列一一对齐 */}
+        <TooltipProvider>
+          <div className='mt-4 overflow-x-auto pb-1'>
             <div
-              className='text-muted-foreground h-4 text-[10px] leading-4'
-              aria-hidden='true'
+              className='inline-flex min-w-max flex-col gap-1'
+              role='group'
+              aria-label={t('Daily activity heatmap')}
             >
+              {/* 月份标签行：与周列一一对齐 */}
               <div
-                className='inline-grid'
-                style={{
-                  gridTemplateColumns: `repeat(${grid.weekCount}, ${CELL_SIZE + CELL_GAP}px)`,
-                }}
-              >
-                {grid.monthMarks.map((mark) => (
-                  <span
-                    key={`month-${mark.weekIndex}-${mark.month}`}
-                    style={{ gridColumnStart: mark.weekIndex + 1 }}
-                    className='whitespace-nowrap'
-                  >
-                    {t(MONTH_KEYS[mark.month])}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className='flex gap-[3px]'>
-              {/* 星期标签列 */}
-              <div
-                className='text-muted-foreground grid text-[10px] leading-none'
+                className='text-muted-foreground h-4 text-[10px] leading-4'
                 aria-hidden='true'
-                style={{
-                  gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`,
-                  gap: CELL_GAP,
-                }}
               >
-                {WEEK_LABEL_ROWS.map((row) => (
-                  <span key={row.id} className='h-[10px] leading-[10px]'>
-                    {row.label ? t(row.label) : ''}
-                  </span>
-                ))}
+                <div
+                  className='inline-grid'
+                  style={{
+                    gridTemplateColumns: `repeat(${grid.weekCount}, ${CELL_SIZE + CELL_GAP}px)`,
+                  }}
+                >
+                  {grid.monthMarks.map((mark) => (
+                    <span
+                      key={`month-${mark.weekIndex}-${mark.month}`}
+                      style={{ gridColumnStart: mark.weekIndex + 1 }}
+                      className='whitespace-nowrap'
+                    >
+                      {t(MONTH_KEYS[mark.month])}
+                    </span>
+                  ))}
+                </div>
               </div>
 
-              {/* 周列格子 */}
               <div className='flex gap-[3px]'>
-                {Array.from({ length: grid.weekCount }, (_, week) => (
-                  <div
-                    key={`week-${grid.cells[week * 7]?.dayTs ?? week}`}
-                    className='grid'
-                    style={{
-                      gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`,
-                      gap: CELL_GAP,
-                    }}
-                  >
-                    {grid.cells
-                      .slice(week * 7, week * 7 + 7)
-                      .map((cell) => (
-                        <div
-                          key={cell.dayTs}
-                          role='img'
-                          title={`${formatDayLabel(cell.dayTs)} ${formatCellValue(cell.value, props.metric, props.locale)}`}
-                          className={cn(
-                            'size-[10px] rounded-[2px]',
-                            USAGE_HEATMAP_LEVEL_CLASSES[cell.level]
-                          )}
-                          aria-label={`${formatDayLabel(cell.dayTs)} ${formatCellValue(cell.value, props.metric, props.locale)}`}
-                        />
-                      ))}
-                  </div>
-                ))}
-              </div>
-            </div>
+                {/* 星期标签列 */}
+                <div
+                  className='text-muted-foreground grid text-[10px] leading-none'
+                  aria-hidden='true'
+                  style={{
+                    gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`,
+                    gap: CELL_GAP,
+                  }}
+                >
+                  {WEEK_LABEL_ROWS.map((row) => (
+                    <span key={row.id} className='h-[10px] leading-[10px]'>
+                      {row.label ? t(row.label) : ''}
+                    </span>
+                  ))}
+                </div>
 
-            {/* 少 → 多 图例（B20） */}
-            <div
-              className='text-muted-foreground mt-1 flex items-center gap-1 text-[10px]'
-              aria-hidden='true'
-            >
-              <span>{t('Less')}</span>
-              {USAGE_HEATMAP_LEVEL_CLASSES.map((colorClass) => (
-                <span
-                  key={colorClass}
-                  className={cn('size-[10px] rounded-[2px]', colorClass)}
-                />
-              ))}
-              <span>{t('More')}</span>
+                {/* 周列格子 */}
+                <div className='flex gap-[3px]'>
+                  {Array.from({ length: grid.weekCount }, (_, week) => (
+                    <div
+                      key={`week-${grid.cells[week * 7]?.dayTs ?? week}`}
+                      className='grid'
+                      style={{
+                        gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`,
+                        gap: CELL_GAP,
+                      }}
+                    >
+                      {grid.cells
+                        .slice(week * 7, week * 7 + 7)
+                        .map((cell) => (
+                          <Tooltip key={cell.dayTs}>
+                            <TooltipTrigger
+                              render={
+                                <div
+                                  role='img'
+                                  className={cn(
+                                    'size-[10px] cursor-default rounded-[2px]',
+                                    USAGE_HEATMAP_LEVEL_CLASSES[cell.level]
+                                  )}
+                                  aria-label={`${formatDayLabel(cell.dayTs)} ${formatCellValue(cell.value, props.metric, props.locale)}`}
+                                />
+                              }
+                            />
+                            <TooltipContent>
+                              <span className='opacity-70'>
+                                {formatDayLabel(cell.dayTs)}
+                              </span>
+                              <span className='font-semibold tabular-nums'>
+                                {formatCellValue(
+                                  cell.value,
+                                  props.metric,
+                                  props.locale
+                                )}
+                              </span>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 少 → 多 图例（B20） */}
+              <div
+                className='text-muted-foreground mt-1 flex items-center gap-1 text-[10px]'
+                aria-hidden='true'
+              >
+                <span>{t('Less')}</span>
+                {USAGE_HEATMAP_LEVEL_CLASSES.map((colorClass) => (
+                  <span
+                    key={colorClass}
+                    className={cn('size-[10px] rounded-[2px]', colorClass)}
+                  />
+                ))}
+                <span>{t('More')}</span>
+              </div>
             </div>
           </div>
-        </div>
+        </TooltipProvider>
       )}
     </div>
   )

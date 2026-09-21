@@ -36,6 +36,9 @@ interface UsageDailyChartProps {
   isEmpty: boolean
 }
 
+/** 柱状图顶部预留比例：最高柱与绘图区顶端之间保留 25% 高度给悬浮弹窗 */
+const TOP_HEADROOM_RATIO = 0.25
+
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
 > | null = null
@@ -87,6 +90,19 @@ export function UsageDailyChart(props: UsageDailyChartProps) {
   )
 
   const spec = useMemo(() => {
+    // 最高柱顶满绘图区时悬浮弹窗会被裁切：按堆叠日合计锁定 y 轴上限，
+    // 让最高柱只到绘图区高度的 75%，顶部预留 25% 空间展示弹窗
+    const dayTotals = new Map<string, number>()
+    for (const point of props.series) {
+      dayTotals.set(point.Day, (dayTotals.get(point.Day) ?? 0) + point.Value)
+    }
+    let maxDayTotal = 0
+    for (const total of dayTotals.values()) {
+      if (total > maxDayTotal) maxDayTotal = total
+    }
+    const yAxisMax =
+      maxDayTotal > 0 ? maxDayTotal / (1 - TOP_HEADROOM_RATIO) : undefined
+
     return {
       type: 'bar',
       data: [{ id: 'usageDaily', values: props.series }],
@@ -99,6 +115,8 @@ export function UsageDailyChart(props: UsageDailyChartProps) {
       axes: [
         {
           orient: 'left',
+          min: 0,
+          max: yAxisMax,
           label: {
             // Y 轴刻度加千位分隔符（1,000,000），提升大数可读性
             formatMethod: (val: number | string) => formatNumber(Number(val)),

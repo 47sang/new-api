@@ -92,6 +92,26 @@ describe('UsageActivityHeatmap', () => {
     expect(todayCell?.getAttribute('aria-label')).toContain('500')
   })
 
+  test('悬浮格子弹出日期与数值弹窗', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    props.rows = [{ created_at: TODAY, token_used: 500 }]
+    render(<UsageActivityHeatmap {...props} />)
+
+    const todayLabel = new Date(TODAY * 1000).toISOString().slice(0, 10)
+    // 格子以 role=img + aria-label 暴露「日期 数值」，可按名称前缀查询
+    const todayCell = screen.getByRole('img', {
+      name: new RegExp(`^${todayLabel}`),
+    })
+
+    await user.hover(todayCell)
+
+    // Base UI 弹窗无 tooltip role，按项目约定用 data-slot 定位内容容器
+    const dateText = await screen.findByText(todayLabel)
+    const tooltip = dateText.closest('[data-slot="tooltip-content"]')
+    expect(tooltip?.textContent).toContain('500')
+  })
+
   test('空数据渲染全空档格子且统计为 0，不报错', () => {
     const props = baseProps()
     render(<UsageActivityHeatmap {...props} />)
