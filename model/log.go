@@ -171,7 +171,7 @@ func RecordLog(userId int, logType int, content string) {
 	}
 	err := createLog(log)
 	if err != nil {
-		common.SysLog("failed to record log: " + err.Error())
+		common.SysLogThrottled("failed to record log: " + err.Error())
 	}
 }
 
@@ -213,7 +213,7 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo *
 		log.Other = string(data)
 	}
 	if err := createLog(log); err != nil {
-		common.SysLog("failed to record log: " + err.Error())
+		common.SysLogThrottled("failed to record log: " + err.Error())
 	}
 }
 
@@ -327,7 +327,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	}
 	err := createLog(log)
 	if err != nil {
-		logger.LogError(c, "failed to record log: "+err.Error())
+		logger.LogErrorThrottled(c, "failed to record log: "+err.Error())
 	}
 }
 
@@ -394,7 +394,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	err := createLog(log)
 	if err != nil {
-		logger.LogError(c, "failed to record log: "+err.Error())
+		logger.LogErrorThrottled(c, "failed to record log: "+err.Error())
 	}
 	if common.DataExportEnabled {
 		tokenUsed := params.TokenUsed
@@ -757,6 +757,13 @@ func CountOldLog(ctx context.Context, targetTimestamp int64) (int64, error) {
 	return total, nil
 }
 
+// DeleteOldLogBatch 分批删除指定时间戳之前创建的日志，返回本批删除行数。
+//
+// ⚠️ 不能写成 Where(...).Limit(limit).Delete(...)：GORM 的 Delete 语句不渲染 LIMIT
+// （删除子句只有 DELETE/FROM/WHERE），那样会把时间范围内的行一次性全部删除，形成一个
+// 巨型长事务——在数 GB 的日志表上会长时间独占写锁，把同库的请求/响应日志写入与额度
+// 批量更新全部堵成 SQLITE_BUSY。因此先按 created_at 取出本批次主键，再按主键删除：
+// 三种数据库都支持，也真正分批。
 func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
 	if limit <= 0 {
 		limit = 100
@@ -786,7 +793,20 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 		return total, nil
 	}
 
-	result := LOG_DB.WithContext(ctx).Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&Log{})
+	// Log.Id 是 int（不是 int64），集合类型必须与主键一致，否则 Pluck 扫描会类型不符
+	var ids []int
+	if err := LOG_DB.WithContext(ctx).Model(&Log{}).
+		Where("created_at < ?", targetTimestamp).
+		Order("created_at asc, id asc").
+		Limit(limit).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	result := LOG_DB.WithContext(ctx).Where("id IN ?", ids).Delete(&Log{})
 	if nil != result.Error {
 		return 0, result.Error
 	}
@@ -795,13 +815,17 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 
 // VacuumLogDatabase 对 SQLite 日志库执行 VACUUM,把删除数据后滞留在文件中的空闲页
 // 真正归还操作系统:SQLite 的 DELETE 只把释放页挪进 freelist 供复用,数据库文件并不
-// 会自动收缩,因此清理日志后文件大小不变。MySQL/PostgreSQL/ClickHouse 的空间由数据
-// 库自身机制管理,重组语句(OPTIMIZE TABLE / VACUUM FULL)会长时间锁表,不宜自动触发,
-// 非 SQLite 日志库直接跳过并返回 false。
-// 返回是否实际执行了 VACUUM,供调用方区分"已执行"与"方言不适用"。
-func VacuumLogDatabase(ctx context.Context) (bool, error) {
+// 会自动收缩,因此清理日志后文件大小不变。
+// ⚠️ VACUUM 会整库重写:在数 GB 的日志库上需要约等量的临时磁盘空间,并长时间独占写锁
+// (期间同库写入全部 SQLITE_BUSY);一旦在重写过程中被打断(容器停止、宿主断电、磁盘写满),
+// 库文件可能被写坏。因此它只允许由管理员在低峰期手动触发,禁止在后台任务里自动执行。
+// MySQL/PostgreSQL/ClickHouse 的空间由数据库自身机制管理,重组语句也会长时间锁表,
+// 直接跳过。
+// 返回是否实际执行了 VACUUM 与回收的字节数(未执行、或读不到页信息时为 0),供调用方
+// 区分"已执行"与"方言不适用"。
+func VacuumLogDatabase(ctx context.Context) (bool, int64, error) {
 	if !common.UsingLogDatabase(common.DatabaseTypeSQLite) {
-		return false, nil
+		return false, 0, nil
 	}
 
 	// 页大小/页数仅用于计算回收量,读取失败只影响日志里的 MB 数,不阻塞 VACUUM
@@ -810,11 +834,13 @@ func VacuumLogDatabase(ctx context.Context) (bool, error) {
 	readPagesBefore := LOG_DB.Raw("PRAGMA page_count").Scan(&pagesBefore).Error == nil
 
 	if err := LOG_DB.WithContext(ctx).Exec("VACUUM").Error; err != nil {
-		return false, err
+		return false, 0, err
 	}
 
+	var reclaimed int64
 	if readPageSize && readPagesBefore && LOG_DB.Raw("PRAGMA page_count").Scan(&pagesAfter).Error == nil && pagesAfter < pagesBefore {
-		common.SysLog(fmt.Sprintf("log database vacuum completed, reclaimed %.2f MB", float64((pagesBefore-pagesAfter)*pageSize)/1024/1024))
+		reclaimed = (pagesBefore - pagesAfter) * pageSize
+		common.SysLog(fmt.Sprintf("log database vacuum completed, reclaimed %.2f MB", float64(reclaimed)/1024/1024))
 	}
-	return true, nil
+	return true, reclaimed, nil
 }

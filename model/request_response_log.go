@@ -70,7 +70,7 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 			"response_size", "status_code", "created_at",
 		}),
 	}).Create(log).Error; err != nil {
-		common.SysError("failed to save request/response log: " + err.Error())
+		common.SysErrorThrottled("failed to save request/response log: " + err.Error())
 	}
 }
 
@@ -106,22 +106,42 @@ func HasUserLogByRequestId(requestId string, userId int) (bool, error) {
 	return true, nil
 }
 
-// CleanupOldRequestResponseLogs 清理过期的请求/响应日志
-// retentionDays: 保留天数，0 表示永久保留
+// requestResponseLogCleanupBatchSize 限制保留期清理的单批删除行数。
+// 单行可能达到数百 KB（完整请求体 + 响应体），一次删太多会把写锁握住很久，
+// 阻塞同库的日志记录与额度批量更新，曾经造成全站写入 SQLITE_BUSY。
+const requestResponseLogCleanupBatchSize = 100
+
+// CleanupOldRequestResponseLogs 删除保留天数之前的请求/响应日志，返回删除行数。
+// 分批删除：每批独立事务、批间释放写锁，避免长事务把其他写入堵死；
+// 删完（本批不足一批）即返回。retentionDays 为 0 表示永久保留。
 func CleanupOldRequestResponseLogs(retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
 		return 0, nil // 0 表示永久保留
 	}
 
 	cutoffTimestamp := time.Now().AddDate(0, 0, -retentionDays).Unix()
-	result := LOG_DB.Where("created_at < ?", cutoffTimestamp).Delete(&RequestResponseLog{})
-	return result.RowsAffected, result.Error
+	var total int64
+	for {
+		deleted, err := DeleteOldRequestResponseLogBatch(context.Background(), cutoffTimestamp, requestResponseLogCleanupBatchSize)
+		if err != nil {
+			return total, err
+		}
+		total += deleted
+		if deleted < requestResponseLogCleanupBatchSize {
+			return total, nil
+		}
+	}
 }
 
 // DeleteOldRequestResponseLogBatch 分批删除指定时间戳之前创建的请求/响应日志，
 // 供手动清理历史日志的系统任务联动调用：logs 表与 request_response_logs 仅靠
 // request_id 逻辑关联、无外键级联，清理 logs 时若不同步删除会留下孤儿大文本。
 // 两表 created_at 同源（均为请求时刻），按同一目标时间戳删除即可联动。
+//
+// ⚠️ 不能写成 Where(...).Limit(limit).Delete(...)：GORM 的 Delete 语句不渲染 LIMIT
+// （删除子句只有 DELETE/FROM/WHERE），那样会把时间范围内的行一次性全部删除，形成一个
+// 巨型长事务——在数 GB 的表上会长时间独占写锁，把同库写入全部堵成 SQLITE_BUSY。
+// 因此先按 created_at 取出本批次主键，再按主键删除：三种数据库都支持，也真正分批。
 func DeleteOldRequestResponseLogBatch(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
 	if limit <= 0 {
 		limit = 100
@@ -129,7 +149,20 @@ func DeleteOldRequestResponseLogBatch(ctx context.Context, targetTimestamp int64
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	result := LOG_DB.WithContext(ctx).Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&RequestResponseLog{})
+
+	var ids []int64
+	if err := LOG_DB.WithContext(ctx).Model(&RequestResponseLog{}).
+		Where("created_at < ?", targetTimestamp).
+		Order("created_at asc, id asc").
+		Limit(limit).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	result := LOG_DB.WithContext(ctx).Where("id IN ?", ids).Delete(&RequestResponseLog{})
 	if result.Error != nil {
 		return 0, result.Error
 	}

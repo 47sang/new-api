@@ -47,9 +47,10 @@ func TestVacuumLogDatabaseReclaimsSQLiteFreePages(t *testing.T) {
 	sizeBefore, err := os.Stat(dbPath)
 	require.NoError(t, err)
 
-	vacuumed, err := VacuumLogDatabase(context.Background())
+	vacuumed, reclaimed, err := VacuumLogDatabase(context.Background())
 	require.NoError(t, err)
 	require.True(t, vacuumed)
+	assert.Positive(t, reclaimed, "回收量应随 VACUUM 一并返回，供接口向管理员展示")
 
 	var freelistAfter int64
 	require.NoError(t, db.Raw("PRAGMA freelist_count").Scan(&freelistAfter).Error)
@@ -59,6 +60,56 @@ func TestVacuumLogDatabaseReclaimsSQLiteFreePages(t *testing.T) {
 	assert.Less(t, sizeAfter.Size(), sizeBefore.Size(), "VACUUM 后数据库文件应实际缩小")
 }
 
+// TestDeleteOldLogBatchDeletesAtMostLimitRows 回归验证：单批删除行数不得超过 limit。
+// GORM 的 Delete 语句不渲染 LIMIT（删除子句只有 DELETE/FROM/WHERE），旧实现写成
+// Where(...).Limit(limit).Delete(...)，实际一次性删除全部命中行，在数 GB 的日志表上
+// 形成巨型长事务、长时间独占写锁，曾把同库的请求/响应日志写入与额度批量更新全部堵成
+// SQLITE_BUSY。改为按主键取批次 + 按主键删除后，每批必须严格受 limit 约束。
+func TestDeleteOldLogBatchDeletesAtMostLimitRows(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "log-batch.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+
+	previousDB, previousType := LOG_DB, common.LogDatabaseType()
+	LOG_DB = db
+	common.SetLogDatabaseType(common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		LOG_DB = previousDB
+		common.SetLogDatabaseType(previousType)
+	})
+	require.NoError(t, db.AutoMigrate(&Log{}))
+
+	const target = int64(1_700_000_000)
+	logs := make([]Log, 0, 7)
+	for i := range 5 {
+		logs = append(logs, Log{UserId: 1, CreatedAt: target - int64(i+1)*10, Type: LogTypeConsume, Content: "old"})
+	}
+	for i := range 2 {
+		logs = append(logs, Log{UserId: 1, CreatedAt: target + int64(i+1), Type: LogTypeConsume, Content: "new"})
+	}
+	require.NoError(t, db.Create(&logs).Error)
+
+	var batches []int64
+	for {
+		deleted, err := DeleteOldLogBatch(context.Background(), target, 2)
+		require.NoError(t, err)
+		if deleted == 0 {
+			break
+		}
+		require.LessOrEqual(t, deleted, int64(2), "单批删除行数不得超过 limit")
+		batches = append(batches, deleted)
+	}
+	assert.Equal(t, []int64{2, 2, 1}, batches, "limit=2 时必须两行一批把 5 行旧日志删完")
+
+	var remainingOld int64
+	require.NoError(t, db.Model(&Log{}).Where("created_at < ?", target).Count(&remainingOld).Error)
+	assert.Zero(t, remainingOld, "早于目标时间戳的行必须全部清除")
+
+	var remainingNew int64
+	require.NoError(t, db.Model(&Log{}).Where("created_at >= ?", target).Count(&remainingNew).Error)
+	assert.Equal(t, int64(2), remainingNew, "晚于目标时间戳的行不得被删除")
+}
+
 // TestVacuumLogDatabaseSkipsNonSQLiteLogDB 验证非 SQLite 日志库直接跳过 VACUUM:
 // MySQL/PostgreSQL/ClickHouse 的空间由数据库自身机制管理,重组语句会长时间锁表
 func TestVacuumLogDatabaseSkipsNonSQLiteLogDB(t *testing.T) {
@@ -66,9 +117,10 @@ func TestVacuumLogDatabaseSkipsNonSQLiteLogDB(t *testing.T) {
 	common.SetLogDatabaseType(common.DatabaseTypeMySQL)
 	t.Cleanup(func() { common.SetLogDatabaseType(previousType) })
 
-	vacuumed, err := VacuumLogDatabase(context.Background())
+	vacuumed, reclaimed, err := VacuumLogDatabase(context.Background())
 	require.NoError(t, err)
 	assert.False(t, vacuumed)
+	assert.Zero(t, reclaimed, "非 SQLite 日志库不得报告回收量")
 }
 
 // TestLogModelNamesDedupedAndFiltered 回归验证:模型名列表接口必须去重、剔除空模型名,

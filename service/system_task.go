@@ -357,56 +357,44 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		return
 	}
 
-	for {
-		remaining, err := model.CountOldLog(ctx, payload.TargetTimestamp)
+	// 只统计一次：清理目标时间戳总是早于当前时刻，删除期间不可能有新的命中行产生，
+	// 逐轮重新全表 count 只会把表多扫若干遍——这是清理任务"响应非常慢"的主因。
+	remaining, err := model.CountOldLog(ctx, payload.TargetTimestamp)
+	if err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
+	syncLogCleanupStateFromRemaining(&state, remaining)
+	if err := model.UpdateSystemTaskState(task.TaskID, runnerID, state); err != nil {
+		logSystemTaskLockError(ctx, task, err)
+		return
+	}
+
+	for state.Remaining > 0 {
+		rowsAffected, err := model.DeleteOldLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
 		if err != nil {
 			failSystemTask(task, runnerID, err)
 			return
 		}
-		syncLogCleanupStateFromRemaining(&state, remaining)
-		if err := model.UpdateSystemTaskState(task.TaskID, runnerID, state); err != nil {
-			logSystemTaskLockError(ctx, task, err)
-			return
-		}
-		if state.Remaining == 0 {
+		if rowsAffected == 0 {
+			// 统计快照与实删不一致（其余节点已删完、或行被并发清理）：按删除结果收敛。
+			state.Remaining = 0
 			break
 		}
 
-		// Track whether this pass deleted anything so a fresh recount that still
-		// reports remaining rows resumes immediately instead of waiting for the
-		// lock to expire. If a whole pass deletes nothing while rows remain, the
-		// rows cannot be removed and we fail instead of busy-looping.
-		progressed := false
-		for state.Remaining > 0 {
-			rowsAffected, err := model.DeleteOldLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
-			if err != nil {
-				failSystemTask(task, runnerID, err)
-				return
-			}
-			if rowsAffected == 0 {
-				break
-			}
-			progressed = true
-
-			state.Processed += rowsAffected
-			if state.Total < state.Processed {
-				state.Total = state.Processed
-			}
-			if state.Remaining > rowsAffected {
-				state.Remaining -= rowsAffected
-			} else {
-				state.Remaining = 0
-			}
-			state.Progress = logCleanupProgress(state.Processed, state.Total)
-
-			if err := model.UpdateSystemTaskState(task.TaskID, runnerID, state); err != nil {
-				logSystemTaskLockError(ctx, task, err)
-				return
-			}
+		state.Processed += rowsAffected
+		if state.Total < state.Processed {
+			state.Total = state.Processed
 		}
+		if state.Remaining > rowsAffected {
+			state.Remaining -= rowsAffected
+		} else {
+			state.Remaining = 0
+		}
+		state.Progress = logCleanupProgress(state.Processed, state.Total)
 
-		if !progressed {
-			failSystemTask(task, runnerID, errors.New("no log rows were deleted"))
+		if err := model.UpdateSystemTaskState(task.TaskID, runnerID, state); err != nil {
+			logSystemTaskLockError(ctx, task, err)
 			return
 		}
 	}
@@ -438,12 +426,11 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		}
 	}
 
-	// SQLite 日志库的文件不会因 DELETE 自动收缩(释放页滞留 freelist),清理完成后
-	// 执行 VACUUM 归还磁盘空间;失败只告警,不影响已完成的清理结果。
-	if _, err := model.VacuumLogDatabase(ctx); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("system task %s log db vacuum failed: %v", task.TaskID, err))
-	}
-
+	// 清理结束后不再自动 VACUUM。SQLite 的 VACUUM 会整库重写：在数 GB 的日志库上
+	// 既要长时间独占写锁（期间全站写入 SQLITE_BUSY）、又要约等量的临时磁盘空间，
+	// 运行中执行一旦被中断（容器停止、宿主断电、磁盘写满）就可能把库文件写坏。
+	// 空间回收改由管理员在「系统设置 → 日志设置」里手动触发（RunLogDatabaseVacuum），
+	// 触发时有确认提示，且可以选择在低峰期、停机窗口内执行。
 	result := LogCleanupResult{
 		DeletedCount:                state.Processed,
 		DeletedRequestResponseCount: deletedRequestResponseCount,

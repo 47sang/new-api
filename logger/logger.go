@@ -88,6 +88,15 @@ func LogError(ctx context.Context, msg string) {
 	logHelper(ctx, loggerError, msg)
 }
 
+// LogErrorThrottled 与 LogError 等价，但同一消息在 common.LogThrottleInterval
+// 内只写一条。面向持续性故障：数据库损坏这类问题会让每一次请求都以相同原因失败，
+// 逐条记录会写满错误日志，并把真正有用的首因淹没。
+func LogErrorThrottled(ctx context.Context, msg string) {
+	if common.AllowThrottledLog(msg) {
+		logHelper(ctx, loggerError, msg)
+	}
+}
+
 func LogDebug(ctx context.Context, msg string, args ...any) {
 	if common.DebugEnabled {
 		if len(args) > 0 {

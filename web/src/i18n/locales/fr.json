@@ -6861,6 +6861,17 @@
     "Activity": "Activity",
     "Open image {{index}} of {{total}}": "Ouvrir l'image {{index}} sur {{total}}",
     "Previous image": "Image précédente",
-    "Next image": "Image suivante"
+    "Next image": "Image suivante",
+    "Reclaim database space": "Reclaim database space",
+    "Reclaim space": "Reclaim space",
+    "Reclaiming...": "Reclaiming...",
+    "Reclaim SQLite database space?": "Reclaim SQLite database space?",
+    "Reclaimed {{size}} of database space.": "Reclaimed {{size}} of database space.",
+    "Database space is already compact; nothing to reclaim.": "Database space is already compact; nothing to reclaim.",
+    "Failed to reclaim database space": "Failed to reclaim database space",
+    "SQLite does not shrink the database file after logs are deleted; it only frees the pages for reuse. Reclaim returns those pages to the disk.": "SQLite does not shrink the database file after logs are deleted; it only frees the pages for reuse. Reclaim returns those pages to the disk.",
+    "This rewrites the whole database and blocks writes while it runs. Run it during off-peak hours and keep enough free disk space for a second copy.": "This rewrites the whole database and blocks writes while it runs. Run it during off-peak hours and keep enough free disk space for a second copy.",
+    "This rewrites the entire database file and blocks log writes until it finishes. Confirm only when traffic is low and free disk space is sufficient.": "This rewrites the entire database file and blocks log writes until it finishes. Confirm only when traffic is low and free disk space is sufficient.",
+    "Confirm reclaim": "Confirm reclaim"
   }
 }

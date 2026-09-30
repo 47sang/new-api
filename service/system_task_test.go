@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -288,4 +289,50 @@ func TestRunLogCleanupTaskAlsoDeletesRequestResponseLogs(t *testing.T) {
 
 	_, err = model.GetRequestResponseLogByRequestId("link-new-1")
 	require.NoError(t, err) // 时间戳之后的请求/响应详情不受影响
+}
+
+// TestRunLogCleanupTaskLeavesSpaceReclaimToAdmin 回归验证：日志清理结束不得自动
+// VACUUM。VACUUM 会整库重写——在数 GB 的日志库上既要长时间独占写锁（期间全站写入
+// SQLITE_BUSY），又需要约等量的临时磁盘空间，运行中被中断（容器停止、磁盘写满）就可能
+// 把库文件写坏：本机 7.6 GB 的 SQLite 日志库正是这样损坏的。空间回收改为管理员在
+// 系统设置里手动触发，触发前有确认提示。
+func TestRunLogCleanupTaskLeavesSpaceReclaimToAdmin(t *testing.T) {
+	truncate(t)
+
+	// 先把库压平，确保后续断言"空闲页仍在"只可能由本次清理产生
+	require.NoError(t, model.LOG_DB.Exec("VACUUM").Error)
+	var freelistBefore int64
+	require.NoError(t, model.LOG_DB.Raw("PRAGMA freelist_count").Scan(&freelistBefore).Error)
+	require.Zero(t, freelistBefore, "前置 VACUUM 后不应有空闲页，否则该测试失去意义")
+
+	const target = int64(1_700_000_000)
+	// 250 行 × 1KB：横跨多个页且超过单个清理批次，删除后页会进入 freelist
+	logs := make([]model.Log, 0, 250)
+	for i := range 250 {
+		logs = append(logs, model.Log{
+			UserId: 1, CreatedAt: target - int64(i+1), Type: model.LogTypeConsume,
+			Content: strings.Repeat("x", 1024),
+		})
+	}
+	require.NoError(t, model.LOG_DB.Create(&logs).Error)
+
+	task, err := model.CreateSystemTask(model.SystemTaskTypeLogCleanup, LogCleanupPayload{TargetTimestamp: target, BatchSize: 100}, LogCleanupState{})
+	require.NoError(t, err)
+	_, claimed, err := model.ClaimSystemTask(task.ID, task.Type, "runner-vacuum-test", common.GetTimestamp()+60)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	runLogCleanupTask(context.Background(), task, "runner-vacuum-test")
+
+	finished, err := model.GetSystemTaskByTaskID(task.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, model.SystemTaskStatusSucceeded, finished.Status)
+
+	var remaining int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("created_at < ?", target).Count(&remaining).Error)
+	require.Zero(t, remaining)
+
+	var freelistAfter int64
+	require.NoError(t, model.LOG_DB.Raw("PRAGMA freelist_count").Scan(&freelistAfter).Error)
+	assert.Positive(t, freelistAfter, "清理后不得自动 VACUUM：释放的页必须留在 freelist 中，等待管理员手动回收")
 }

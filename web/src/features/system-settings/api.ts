@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  LogDatabaseVacuumResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskFilters,
@@ -83,6 +84,14 @@ export async function getCurrentLogCleanupTask() {
     {
       params: { type: 'log_cleanup' },
     }
+  )
+  return res.data
+}
+
+// 手动回收 SQLite 日志库空间（VACUUM）。会整库重写并短暂阻塞写入，需管理员显式确认。
+export async function runLogDatabaseVacuum() {
+  const res = await api.post<LogDatabaseVacuumResponse>(
+    '/api/system-task/log-vacuum'
   )
   return res.data
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -32,6 +33,22 @@ func CreateLogCleanupSystemTask(c *gin.Context) {
 		"message": "",
 		"data":    task.ToResponse(),
 	})
+}
+
+// RunLogDatabaseVacuum 手动回收 SQLite 日志库空间。
+// VACUUM 会整库重写并长时间独占写锁，只在管理员显式确认后执行；非 SQLite 日志库
+// （MySQL/PostgreSQL/ClickHouse）的空间由数据库自身管理，直接跳过。
+func RunLogDatabaseVacuum(c *gin.Context) {
+	vacuumed, reclaimedBytes, err := model.VacuumLogDatabase(c.Request.Context())
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("回收空间失败: %v", err))
+		return
+	}
+	if !vacuumed {
+		common.ApiErrorMsg(c, "当前日志库不是 SQLite，空间由数据库自身管理，无需回收")
+		return
+	}
+	common.ApiSuccess(c, gin.H{"vacuumed": vacuumed, "reclaimed_bytes": reclaimedBytes})
 }
 
 func GetCurrentSystemTask(c *gin.Context) {

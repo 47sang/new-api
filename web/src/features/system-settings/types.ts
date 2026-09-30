@@ -127,6 +127,17 @@ export type SystemTaskResponse<TTask = SystemTask | null> = {
   data?: TTask
 }
 
+export type LogDatabaseVacuumResult = {
+  vacuumed: boolean
+  reclaimed_bytes: number
+}
+
+export type LogDatabaseVacuumResponse = {
+  success: boolean
+  message: string
+  data?: LogDatabaseVacuumResult
+}
+
 export type SystemTaskListResponse = {
   success: boolean
   message: string

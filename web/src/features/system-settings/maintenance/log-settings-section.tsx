@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DateTimePicker } from '@/components/datetime-picker'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -70,6 +71,7 @@ import {
 import {
   getCurrentLogCleanupTask,
   getSystemTask,
+  runLogDatabaseVacuum,
   startLogCleanupTask,
 } from '../api'
 import {
@@ -168,6 +170,8 @@ export function LogSettingsSection({
     null
   )
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [showVacuumDialog, setShowVacuumDialog] = useState(false)
+  const [isVacuuming, setIsVacuuming] = useState(false)
   const [serverLogInfo, setServerLogInfo] = useState<ServerLogInfo | null>(null)
   const [serverLogCleanupMode, setServerLogCleanupMode] = useState('by_count')
   const [serverLogCleanupValue, setServerLogCleanupValue] = useState(10)
@@ -329,6 +333,35 @@ export function LogSettingsSection({
     }
   }
 
+  // SQLite 的 DELETE 只把页挪进 freelist，文件不会自动缩小，需手动 VACUUM 才能把空间
+  // 还给磁盘。VACUUM 会整库重写并短暂阻塞写入，因此只做手动触发，不做自动调度。
+  const handleVacuumLogDatabase = async () => {
+    setIsVacuuming(true)
+    try {
+      const res = await runLogDatabaseVacuum()
+      if (!res.success || !res.data?.vacuumed) {
+        throw createServerError(res, t('Failed to reclaim database space'))
+      }
+      setShowVacuumDialog(false)
+      const reclaimedBytes = res.data.reclaimed_bytes ?? 0
+      toast.success(
+        reclaimedBytes > 0
+          ? t('Reclaimed {{size}} of database space.', {
+              size: formatBytes(reclaimedBytes),
+            })
+          : t('Database space is already compact; nothing to reclaim.')
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : t('Failed to reclaim database space')
+      handleServerError(error, message)
+    } finally {
+      setIsVacuuming(false)
+    }
+  }
+
   const cleanupServerLogFiles = async () => {
     if (
       !serverLogCleanupValue ||
@@ -477,6 +510,34 @@ export function LogSettingsSection({
                 )}
               </div>
             )}
+          </SettingsControlGroup>
+
+          <SettingsControlGroup className='space-y-3'>
+            <div>
+              <h4 className='text-sm font-medium'>
+                {t('Reclaim database space')}
+              </h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'SQLite does not shrink the database file after logs are deleted; it only frees the pages for reuse. Reclaim returns those pages to the disk.'
+                )}
+              </p>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'This rewrites the whole database and blocks writes while it runs. Run it during off-peak hours and keep enough free disk space for a second copy.'
+                )}
+              </p>
+            </div>
+            <div>
+              <Button
+                type='button'
+                variant='outline'
+                onClick={() => setShowVacuumDialog(true)}
+                disabled={isVacuuming || logCleanupActive}
+              >
+                {isVacuuming ? t('Reclaiming...') : t('Reclaim space')}
+              </Button>
+            </div>
           </SettingsControlGroup>
         </SettingsForm>
       </Form>
@@ -634,6 +695,21 @@ export function LogSettingsSection({
             </Alert>
           ))}
       </div>
+
+      <ConfirmDialog
+        open={showVacuumDialog}
+        onOpenChange={(open) => {
+          if (!open && !isVacuuming) setShowVacuumDialog(false)
+        }}
+        title={t('Reclaim SQLite database space?')}
+        desc={t(
+          'This rewrites the entire database file and blocks log writes until it finishes. Confirm only when traffic is low and free disk space is sufficient.'
+        )}
+        confirmText={t('Confirm reclaim')}
+        destructive
+        handleConfirm={handleVacuumLogDatabase}
+        isLoading={isVacuuming}
+      />
 
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

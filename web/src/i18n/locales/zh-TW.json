@@ -6861,6 +6861,17 @@
     "Activity": "Activity",
     "Open image {{index}} of {{total}}": "開啟第 {{index}} 張圖片（共 {{total}} 張）",
     "Previous image": "上一張圖片",
-    "Next image": "下一張圖片"
+    "Next image": "下一張圖片",
+    "Reclaim database space": "回收資料庫空間",
+    "Reclaim space": "回收空間",
+    "Reclaiming...": "正在回收...",
+    "Reclaim SQLite database space?": "回收 SQLite 資料庫空間？",
+    "Reclaimed {{size}} of database space.": "已回收 {{size}} 資料庫空間。",
+    "Database space is already compact; nothing to reclaim.": "資料庫空間已是緊湊狀態，無需回收。",
+    "Failed to reclaim database space": "回收資料庫空間失敗",
+    "SQLite does not shrink the database file after logs are deleted; it only frees the pages for reuse. Reclaim returns those pages to the disk.": "SQLite 刪除日誌後不會自動縮小資料庫檔案，只會把頁釋放到空閒清單中等待重複使用；回收可把這些空間真正還給磁碟。",
+    "This rewrites the whole database and blocks writes while it runs. Run it during off-peak hours and keep enough free disk space for a second copy.": "回收會重寫整個資料庫，執行期間寫入會被阻塞。請在離峰時段執行，並確保磁碟剩餘空間足以再放一份資料庫副本。",
+    "This rewrites the entire database file and blocks log writes until it finishes. Confirm only when traffic is low and free disk space is sufficient.": "回收會重寫整個資料庫檔案，完成前日誌寫入會被阻塞。請確認目前流量較低、磁碟剩餘空間充足後再執行。",
+    "Confirm reclaim": "確認回收"
   }
 }
