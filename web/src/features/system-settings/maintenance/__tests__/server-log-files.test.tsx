@@ -29,7 +29,7 @@ import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
-import { LogSettingsSection } from '../log-settings-section'
+import { ServerLogFiles } from '../server-log-files'
 
 // 用空 en 资源渲染：所有文案回落到 i18n key 本身，断言稳定且不依赖某一语言
 const RECLAIM_BUTTON = 'Reclaim space'
@@ -52,7 +52,7 @@ function renderSection() {
       </QueryClientProvider>
     </I18nextProvider>
   )
-  return render(<LogSettingsSection defaultEnabled={false} defaultRequestResponseLogEnabled={false} />, {
+  return render(<ServerLogFiles />, {
     wrapper,
   })
 }
@@ -74,7 +74,7 @@ beforeEach(async () => {
   }))
 })
 
-describe('LogSettingsSection 数据库空间回收', () => {
+describe('ServerLogFiles 数据库空间回收', () => {
   it('点击入口先弹出二次确认，未确认不得发起回收请求', async () => {
     const post = vi
       .spyOn(api, 'post')
