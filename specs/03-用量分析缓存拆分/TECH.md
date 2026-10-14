@@ -114,9 +114,12 @@ func quotaDataTokenSplit(other *LogOther, promptTokens int, completionTokens int
   百分比 + 100% 三段堆叠条 + 合计 + 输入侧缓存命中率 + 返回榜单按钮；`hasSplitData = false` 时
   渲染空状态（第 16 条）。
 - `usage-model-cache-panel.tsx`：props `{ ranks, metric, loading, locale }`；同样自己负责
-  指标门（`metric !== 'tokens'` 时返回 null，第 23 条），渲染**单张列表**（表头 + 每模型一行）。
-  早期实现把列表与 100% 堆叠横条左右并排，出现两套重复的「模型」列，已按用户要求删掉右侧
-  图表块，只保留数值列表（2026-10-14）。
+  指标门（`metric !== 'tokens'` 时返回 null，第 23 条），渲染列表 + 每行 100% 三段堆叠横条，
+  两块在 `lg` 断点左右并排、窄屏堆叠。堆叠条用 `div + width%` 实现，沿用
+  `usage-top-models.tsx:76-88` 的进度条写法，**不引入第二个 VChart 实例**；悬浮明细用 `title`
+  属性（与 `usage-summary-card.tsx` 的 `TooltipFullValue` 一致）。图表块按第 19 条**不重复展示
+  模型列**，行的归属由两块行序一致承载（2026-10-14 曾整块删除右侧图表，后按用户要求恢复，
+  仅去掉模型列）。
 
 **B7. `usage-summary-card.tsx`**：右栏按 `selectedModel !== null` 在 `UsageTopModels` 与
 `UsageModelTokenSplit` 之间切换（`metric !== 'tokens'` 时后者自己渲染提示，第 15 条）；

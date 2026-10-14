@@ -62,7 +62,7 @@ describe('UsageModelCachePanel', () => {
     splitRow('gamma', { output_tokens: 50 }),
   ]
 
-  test('渲染标题、口径说明与每模型一行（不重复展示模型列）', () => {
+  test('渲染标题、口径说明与每模型一行（模型名不重复，堆叠条每行一条）', () => {
     const { container } = renderPanel(rows)
 
     expect(screen.getByText('Model cache share')).toBeTruthy()
@@ -72,20 +72,61 @@ describe('UsageModelCachePanel', () => {
     expect(header?.textContent).toContain(
       'Cache hit rate = cache read / (cache read + uncached input)'
     )
-    // 每个模型名只出现一次：不再并排展示第二套模型列
+    // 每个模型名在可见文本中只出现一次：右侧图表块不再重复展示模型列
     expect(screen.getAllByText('alpha')).toHaveLength(1)
     expect(screen.getAllByText('beta')).toHaveLength(1)
     expect(screen.getAllByText('gamma')).toHaveLength(1)
-    expect(container.querySelectorAll('[role="presentation"]')).toHaveLength(0)
+    // 右侧每行一条 100% 三段堆叠横条（占比可视化必须保留）
+    expect(container.querySelectorAll('[role="presentation"]')).toHaveLength(3)
   })
 
-  test('列表按三项合计降序排列', () => {
+  test('堆叠横条按三项占比分段，占比为 0 的段不渲染', () => {
     const { container } = renderPanel(rows)
+    const bars = container.querySelectorAll('[role="presentation"]')
+
+    const widthOf = (bar: Element, index: number) =>
+      Number.parseFloat(
+        (bar.children[index] as HTMLElement).style.width.replace('%', '')
+      )
+
+    // alpha：缓存读 700、非缓存读 300、输出 200，合计 1200
+    expect(bars[0].children).toHaveLength(3)
+    expect(widthOf(bars[0], 0)).toBeCloseTo((700 / 1200) * 100, 5)
+    expect(widthOf(bars[0], 1)).toBeCloseTo((300 / 1200) * 100, 5)
+    expect(widthOf(bars[0], 2)).toBeCloseTo((200 / 1200) * 100, 5)
+    expect((bars[0].children[0] as HTMLElement).style.backgroundColor).toBe(
+      'rgb(90, 216, 166)'
+    )
+    // 悬浮 title 给出该行三段精确数值与命中率，模型名只出现在 title 里
+    expect(bars[0].getAttribute('title')).toContain('alpha')
+    expect(bars[0].getAttribute('title')).toContain('700')
+
+    // beta：输出为 0，第三段不渲染
+    expect(bars[1].children).toHaveLength(2)
+
+    // gamma：只有输出，单段占满整条
+    expect(bars[2].children).toHaveLength(1)
+    expect(widthOf(bars[2], 0)).toBeCloseTo(100, 5)
+  })
+
+  test('列表按三项合计降序排列，右侧图表块行序与列表一致', () => {
+    const { container } = renderPanel(rows)
+    const lists = container.querySelectorAll('ul')
+    expect(lists).toHaveLength(2)
     // 合计：alpha 1200、beta 1000、gamma 50
-    const listItems = container.querySelectorAll('li')
+    const listItems = lists[0].querySelectorAll('li')
     expect(listItems).toHaveLength(3)
     expect((listItems[0] as HTMLElement).textContent).toContain('alpha')
     expect((listItems[2] as HTMLElement).textContent).toContain('gamma')
+    // 右侧图表块同样三行，且横条 title 带同一模型名（两块同行同源）
+    const barItems = lists[1].querySelectorAll('li')
+    expect(barItems).toHaveLength(3)
+    expect(
+      barItems[0].querySelector('[role="presentation"]')?.getAttribute('title')
+    ).toContain('alpha')
+    expect(
+      barItems[2].querySelector('[role="presentation"]')?.getAttribute('title')
+    ).toContain('gamma')
   })
 
   test('每行给出三项数值、合计与命中率', () => {
@@ -116,7 +157,7 @@ describe('UsageModelCachePanel', () => {
     )
     // 前 2 名 + 其他，合并为同一个列表
     expect(screen.getAllByText('Other')).toHaveLength(1)
-    const listItems = container.querySelectorAll('li')
+    const listItems = container.querySelectorAll('ul')[0].querySelectorAll('li')
     expect(listItems).toHaveLength(3)
     // 其他 = gamma + delta + epsilon：缓存读 15、非缓存读 25、输出 50，
     // 命中率 = 15 / 40 = 37.5%（按合并后的合计重算，不是平均）
@@ -145,7 +186,9 @@ describe('UsageModelCachePanel', () => {
         loading
       />
     )
-    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(
+      0
+    )
     expect(screen.queryByText('alpha')).toBeNull()
   })
 })
