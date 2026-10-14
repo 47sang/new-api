@@ -36,6 +36,7 @@ import { toIntlLocale } from '@/i18n/languages'
 import { toStartOfDay } from '@/lib/time'
 
 import { UsageActivityHeatmap } from './usage-activity-heatmap'
+import { UsageInflightPanel } from './usage-inflight-panel'
 import { UsageSummaryCard } from './usage-summary-card'
 
 const DAY_SECONDS = 86400
@@ -190,6 +191,7 @@ export function UsageDashboard() {
         onRetry={() => void mainQuery.refetch()}
         isEmpty={currentRows.length === 0}
       />
+      <UsageInflightPanel locale={locale} />
       <UsageActivityHeatmap
         metric={metric}
         rows={yearQuery.data ?? []}

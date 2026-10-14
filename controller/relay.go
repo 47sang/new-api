@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/inflight"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -125,6 +126,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
+	// 在途请求监控（实时面板）。仅此一处钩子，实现集中在 service/inflight，
+	// 便于 fork 后与上游合并：这里只多两个函数调用，不改任何既有结构。
+	inflightRecord := inflight.Begin(c, relayInfo)
+	defer inflight.Finish(inflightRecord, &newAPIError)
+
 	defer func() {
 		recovered := recover()
 		resultErr := newAPIError
@@ -185,6 +191,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		// 即将发往上游：把在途记录从「排队」切到「活跃」
+		inflight.MarkActive(inflightRecord, c, relayInfo)
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)

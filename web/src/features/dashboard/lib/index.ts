@@ -42,6 +42,25 @@ export {
 } from './flow'
 export { safeDivide, calculateDashboardStats } from './stats'
 export {
+  EMPTY_INFLIGHT_SNAPSHOT,
+  formatInflightCounter,
+  formatInflightElapsed,
+  groupInflightByModel,
+  inflightElapsedSeconds,
+  isInflightIdle,
+} from './inflight'
+export type {
+  InflightModelGroup,
+  InflightPhase,
+  InflightRecord,
+  InflightSnapshot,
+} from './inflight'
+export { subscribeInflightStream } from './inflight-stream'
+export type {
+  InflightStream,
+  InflightStreamHandlers,
+} from './inflight-stream'
+export {
   USAGE_CACHE_MODEL_LIMIT,
   USAGE_HEATMAP_DAYS,
   USAGE_OTHER_COLOR,

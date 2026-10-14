@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/service/inflight"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -361,6 +362,14 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/self", middleware.UserAuth(), controller.GetUserQuotaDates)
 		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
 		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)
+
+		// 实时在途请求监控（SSE）。实现集中在 service/inflight；长连接不加计数型
+		// 限流，否则前端的自动重连会被误伤。
+		inflightRoute := apiRouter.Group("/inflight")
+		inflightRoute.Use(middleware.AdminAuth())
+		{
+			inflightRoute.GET("/stream", inflight.Stream)
+		}
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
