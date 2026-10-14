@@ -91,14 +91,16 @@ export function UsageInflightPanel(props: UsageInflightPanelProps) {
       <div className='space-y-3'>
         {groups.map((group) => (
           <div key={group.model || 'unknown'} className='min-w-0'>
-            <div className='flex items-center gap-2 text-xs font-medium'>
+            {/* 节头行：模型 ID 是该节的标识，用加粗大字 + 右侧徽标承载
+                (当前在途 - 峰值)，避免模型名被下面的表头淹没 */}
+            <div className='flex items-center justify-between gap-2'>
               <span
-                className='min-w-0 truncate'
+                className='min-w-0 truncate text-sm font-semibold'
                 title={group.model || t('Unknown model')}
               >
                 {group.model || t('Unknown model')}
               </span>
-              <span className='text-muted-foreground shrink-0 tabular-nums'>
+              <span className='bg-muted text-muted-foreground shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium tabular-nums'>
                 {formatInflightCounter(group)}
               </span>
             </div>
