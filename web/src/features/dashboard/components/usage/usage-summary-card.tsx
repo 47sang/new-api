@@ -36,7 +36,9 @@ import {
 } from '@/features/dashboard/constants'
 import type {
   DailySeriesPoint,
+  ModelTokenSplitRanks,
   PeriodChange,
+  TokenSplitTotals,
   UsageModelRank,
 } from '@/features/dashboard/lib'
 import type { UsageMetric } from '@/features/dashboard/types'
@@ -50,6 +52,8 @@ import {
 import { cn } from '@/lib/utils'
 
 import { UsageDailyChart } from './usage-daily-chart'
+import { UsageModelCachePanel } from './usage-model-cache-panel'
+import { UsageModelTokenSplit } from './usage-model-token-split'
 import { UsageTopModels } from './usage-top-models'
 
 interface UsageSummaryCardProps {
@@ -62,6 +66,11 @@ interface UsageSummaryCardProps {
   series: DailySeriesPoint[]
   colorMap: Record<string, string>
   topModels: UsageModelRank[]
+  /** 当前选中（柱形图图例或 Top models 行）的模型，null 表示未选中 */
+  selectedModel: string | null
+  onSelectedModelChange: (model: string | null) => void
+  tokenSplit: TokenSplitTotals
+  cacheRanks: ModelTokenSplitRanks
   locale: Intl.LocalesArgument
   loading: boolean
   error: boolean
@@ -229,18 +238,44 @@ export function UsageSummaryCard(props: UsageSummaryCardProps) {
                 metric={props.metric}
                 loading={props.loading}
                 isEmpty={props.isEmpty}
+                selectedModel={props.selectedModel}
+                onSelectedModelChange={props.onSelectedModelChange}
               />
             </>
           )}
         </div>
-        <UsageTopModels
-          models={props.topModels}
-          colorMap={props.colorMap}
-          metric={props.metric}
-          locale={props.locale}
-          loading={props.loading}
-        />
+        {props.selectedModel !== null ? (
+          <UsageModelTokenSplit
+            model={props.selectedModel}
+            split={props.tokenSplit}
+            metric={props.metric}
+            locale={props.locale}
+            loading={props.loading}
+            error={props.error}
+            onRetry={props.onRetry}
+            onBack={() => props.onSelectedModelChange(null)}
+          />
+        ) : (
+          <UsageTopModels
+            models={props.topModels}
+            colorMap={props.colorMap}
+            metric={props.metric}
+            locale={props.locale}
+            loading={props.loading}
+            onSelectModel={props.onSelectedModelChange}
+          />
+        )}
       </div>
+      {props.metric === 'tokens' && (
+        <div className='px-4 pb-4 sm:px-5 sm:pb-5'>
+          <UsageModelCachePanel
+            ranks={props.cacheRanks}
+            metric={props.metric}
+            locale={props.locale}
+            loading={props.loading}
+          />
+        </div>
+      )}
     </section>
   )
 }

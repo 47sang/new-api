@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getDailyQuotaDates } from '@/features/dashboard/api'
@@ -25,8 +25,10 @@ import { USAGE_ANALYTICS_QUERY_KEY_ROOT } from '@/features/dashboard/constants'
 import {
   buildDailyModelSeries,
   buildModelColors,
+  computeModelTokenSplits,
   computePeriodComparison,
   computeTopModels,
+  sumTokenSplit,
   summarizeMetric,
 } from '@/features/dashboard/lib'
 import type { DailyUsageItem, UsageMetric } from '@/features/dashboard/types'
@@ -58,6 +60,8 @@ export function UsageDashboard() {
   const { t, i18n } = useTranslation()
   const [rangeDays, setRangeDays] = useState<7 | 30 | 90>(7)
   const [metric, setMetric] = useState<UsageMetric>('tokens')
+  // 柱形图图例 / Top models 行选中的模型，null 表示展示榜单
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   const otherLabel = t('Other')
   const locale = toIntlLocale(i18n.language)
@@ -150,6 +154,19 @@ export function UsageDashboard() {
     () => computeTopModels(currentRows, metric),
     [currentRows, metric]
   )
+  const tokenSplit = useMemo(
+    () => sumTokenSplit(currentRows, selectedModel ?? undefined),
+    [currentRows, selectedModel]
+  )
+  const cacheRanks = useMemo(
+    () => computeModelTokenSplits(currentRows),
+    [currentRows]
+  )
+
+  // 切换时间范围或指标后选中态失效：复位，避免展示上一个范围/指标的拆分
+  useEffect(() => {
+    setSelectedModel(null)
+  }, [rangeDays, metric])
 
   return (
     <div className='space-y-3 sm:space-y-4'>
@@ -163,6 +180,10 @@ export function UsageDashboard() {
         series={series}
         colorMap={colorMap}
         topModels={topModels}
+        selectedModel={selectedModel}
+        onSelectedModelChange={setSelectedModel}
+        tokenSplit={tokenSplit}
+        cacheRanks={cacheRanks}
         locale={locale}
         loading={mainQuery.isLoading}
         error={mainQuery.isError}

@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -333,9 +334,9 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId        int               `json:"channel_id"`
-	PromptTokens     int               `json:"prompt_tokens"`
-	CompletionTokens int               `json:"completion_tokens"`
+	ChannelId        int `json:"channel_id"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
 	// TokenUsed 写入 quota_data.token_used（用量分析「Token」指标）的总量。
 	// 为 0 时回退为 PromptTokens + CompletionTokens（不含缓存的旧口径）。
 	TokenUsed      int               `json:"token_used"`
@@ -404,19 +405,58 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		if tokenUsed == 0 {
 			tokenUsed = params.PromptTokens + params.CompletionTokens
 		}
+		uncachedInput, cacheRead, output := quotaDataTokenSplit(other, params.PromptTokens, params.CompletionTokens)
 		LogQuotaData(QuotaDataLogParams{
-			UserID:    userId,
-			Username:  username,
-			ModelName: params.ModelName,
-			Quota:     params.Quota,
-			CreatedAt: createdAt,
-			TokenUsed: tokenUsed,
-			UseGroup:  params.Group,
-			TokenID:   params.TokenId,
-			ChannelID: params.ChannelId,
-			NodeName:  common.NodeName,
+			UserID:              userId,
+			Username:            username,
+			ModelName:           params.ModelName,
+			Quota:               params.Quota,
+			CreatedAt:           createdAt,
+			TokenUsed:           tokenUsed,
+			UseGroup:            params.Group,
+			TokenID:             params.TokenId,
+			ChannelID:           params.ChannelId,
+			NodeName:            common.NodeName,
+			UncachedInputTokens: uncachedInput,
+			CacheReadTokens:     cacheRead,
+			OutputTokens:        output,
 		})
 	}
+}
+
+// quotaDataTokenSplit 推导写入 quota_data 的 token 三段拆分（非缓存输入、缓存读、输出）。
+//
+// prompt_tokens 是否已包含缓存读由本行 other.usage_semantic 标记决定：anthropic 语义下
+// prompt_tokens 是不含缓存的剩余量，其余口径已含缓存命中、需先扣除，与
+// service.usageDashboardTokenUsed 的语义分支保持一致，保证三项之和与 token_used 对得上。
+// 已知边界：legacy claude 派生口径（service.isLegacyClaudeDerivedOpenAIUsage）同样不含缓存，
+// 但不写 usage_semantic；该类行的 cache_tokens 实际为 0，扣除 0 无影响。
+// 每项都钳制在 [0, math.MaxInt32]，与 usageDashboardTokenUsed 的饱和边界一致，绝不为负。
+func quotaDataTokenSplit(other *LogOther, promptTokens int, completionTokens int) (int, int, int) {
+	clamp := func(v int) int {
+		if v < 0 {
+			return 0
+		}
+		if v > math.MaxInt32 {
+			return math.MaxInt32
+		}
+		return v
+	}
+	snapshot := other.Snapshot()
+	cacheRead := 0
+	switch cached := snapshot["cache_tokens"].(type) {
+	case int:
+		cacheRead = cached
+	case int64:
+		cacheRead = int(cached)
+	case float64:
+		cacheRead = int(cached)
+	}
+	uncachedInput := clamp(promptTokens)
+	if snapshot["usage_semantic"] != "anthropic" {
+		uncachedInput = clamp(promptTokens - cacheRead)
+	}
+	return uncachedInput, clamp(cacheRead), clamp(completionTokens)
 }
 
 type RecordTaskBillingLogParams struct {

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { render, screen } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { UsageTopModels } from '../usage-top-models'
 
@@ -28,6 +28,7 @@ function baseProps() {
     metric: 'requests' as const,
     locale: 'en-US' as Intl.LocalesArgument,
     loading: false,
+    onSelectModel: vi.fn(),
   }
 }
 
@@ -68,5 +69,30 @@ describe('UsageTopModels', () => {
 
     expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
     expect(screen.queryByText('No usage data in the selected range')).toBeNull()
+  })
+
+  test('点击某一行选中该模型，作为图例选中的键盘可达入口', () => {
+    const props = baseProps()
+    props.models = [
+      { model: 'alpha', value: 100, ratio: 1 },
+      { model: 'beta', value: 50, ratio: 0.5 },
+    ]
+    render(<UsageTopModels {...props} />)
+
+    screen.getByText('beta').click()
+    expect(props.onSelectModel).toHaveBeenCalledWith('beta')
+  })
+
+  test('榜单行是可聚焦的按钮，未传回调时点击不报错', () => {
+    const props = baseProps()
+    props.models = [{ model: 'alpha', value: 100, ratio: 1 }]
+    delete (props as Partial<typeof props>).onSelectModel
+    const { container } = render(<UsageTopModels {...props} />)
+
+    const row = container.querySelector('button')
+    expect(row).not.toBeNull()
+    expect(row?.getAttribute('type')).toBe('button')
+    expect(row?.getAttribute('title')).toBe('View token breakdown')
+    row?.click()
   })
 })

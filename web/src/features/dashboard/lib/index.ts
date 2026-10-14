@@ -42,25 +42,33 @@ export {
 } from './flow'
 export { safeDivide, calculateDashboardStats } from './stats'
 export {
+  USAGE_CACHE_MODEL_LIMIT,
   USAGE_HEATMAP_DAYS,
   USAGE_OTHER_COLOR,
   USAGE_SERIES_MODEL_LIMIT,
+  USAGE_TOKEN_SPLIT_COLORS,
   USAGE_TOP_MODEL_LIMIT,
   buildDailyModelSeries,
   buildHeatmapGrid,
   buildModelColors,
   computeHeatmapLevels,
   computeHeatmapStats,
+  computeModelTokenSplits,
   computePeriodComparison,
   computeTopModels,
+  sumTokenSplit,
   summarizeMetric,
+  tokenSplitShares,
   usageMetricValue,
 } from './usage'
 export type {
   DailySeriesPoint,
   HeatmapGrid,
   HeatmapStats,
+  ModelTokenSplit,
+  ModelTokenSplitRanks,
   PeriodChange,
+  TokenSplitTotals,
   UsageModelRank,
 } from './usage'
 export { getPreviewText } from './text'

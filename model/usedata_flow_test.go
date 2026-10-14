@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -190,4 +191,141 @@ func TestLogQuotaDataSplitsRowsByUseGroupTokenChannelAndNode(t *testing.T) {
 	require.Equal(t, 60, rows[0].TokenUsed)
 	require.Equal(t, "default", rows[1].UseGroup)
 	require.Equal(t, 25, rows[1].Quota)
+}
+
+// 三段拆分必须与 count/quota/token_used 一样在两条累加路径上同步累加：
+// 内存缓存合并与 increaseQuotaData 的增量 UPDATE 漏掉任何一列，
+// 周期刷新后用量分析页的缓存拆分数据就会静默丢失。
+func TestLogQuotaDataAccumulatesTokenSplitOnBothFlushPaths(t *testing.T) {
+	truncateTables(t)
+	CacheQuotaDataLock.Lock()
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+
+	params := QuotaDataLogParams{
+		UserID:              1,
+		Username:            "alice",
+		ModelName:           "gpt-a",
+		CreatedAt:           3661,
+		UseGroup:            "vip",
+		TokenID:             11,
+		ChannelID:           1,
+		NodeName:            "node-a",
+		Quota:               100,
+		TokenUsed:           100,
+		UncachedInputTokens: 60,
+		CacheReadTokens:     30,
+		OutputTokens:        10,
+	}
+	LogQuotaData(params)
+	// 同一聚合键第二次累加：走内存缓存合并
+	LogQuotaData(params)
+
+	SaveQuotaDataCache()
+
+	var row QuotaData
+	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
+	require.Equal(t, 2, row.Count)
+	require.Equal(t, 120, row.UncachedInputTokens)
+	require.Equal(t, 60, row.CacheReadTokens)
+	require.Equal(t, 20, row.OutputTokens)
+
+	// 行已存在时再累加一次：走 increaseQuotaData 的增量 UPDATE
+	LogQuotaData(params)
+	SaveQuotaDataCache()
+
+	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
+	require.Equal(t, 3, row.Count)
+	require.Equal(t, 180, row.UncachedInputTokens)
+	require.Equal(t, 90, row.CacheReadTokens)
+	require.Equal(t, 30, row.OutputTokens)
+}
+
+func TestQuotaDataTokenSplit(t *testing.T) {
+	anthropicOther := NewLogOther()
+	anthropicOther.SetPublic("cache_tokens", 400)
+	anthropicOther.SetPublic("usage_semantic", "anthropic")
+
+	openaiOther := NewLogOther()
+	openaiOther.SetPublic("cache_tokens", 400)
+
+	tests := []struct {
+		name           string
+		other          *LogOther
+		promptTokens   int
+		completionToks int
+		wantUncached   int
+		wantCacheRead  int
+		wantOutput     int
+	}{
+		{
+			// anthropic 语义的 prompt_tokens 不含缓存读，不能扣除
+			name:           "anthropic 语义不扣除缓存读",
+			other:          anthropicOther,
+			promptTokens:   600,
+			completionToks: 200,
+			wantUncached:   600,
+			wantCacheRead:  400,
+			wantOutput:     200,
+		},
+		{
+			// 其余口径的 prompt_tokens 已含缓存命中，需扣除得到非缓存输入
+			name:           "openai 语义扣除缓存读",
+			other:          openaiOther,
+			promptTokens:   600,
+			completionToks: 200,
+			wantUncached:   200,
+			wantCacheRead:  400,
+			wantOutput:     200,
+		},
+		{
+			name:           "没有 other 时全部视为非缓存输入",
+			other:          nil,
+			promptTokens:   600,
+			completionToks: 200,
+			wantUncached:   600,
+			wantCacheRead:  0,
+			wantOutput:     200,
+		},
+		{
+			name:           "扣除后不为负",
+			other:          openaiOther,
+			promptTokens:   100,
+			completionToks: 0,
+			wantUncached:   0,
+			wantCacheRead:  400,
+			wantOutput:     0,
+		},
+		{
+			name:           "超大值钳制在 int32 边界",
+			other:          nil,
+			promptTokens:   math.MaxInt32 + 5,
+			completionToks: math.MaxInt32 + 5,
+			wantUncached:   math.MaxInt32,
+			wantCacheRead:  0,
+			wantOutput:     math.MaxInt32,
+		},
+		{
+			name:           "负值钳制为 0",
+			other:          nil,
+			promptTokens:   -10,
+			completionToks: -10,
+			wantUncached:   0,
+			wantCacheRead:  0,
+			wantOutput:     0,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			uncached, cacheRead, output := quotaDataTokenSplit(
+				testCase.other,
+				testCase.promptTokens,
+				testCase.completionToks,
+			)
+			require.Equal(t, testCase.wantUncached, uncached)
+			require.Equal(t, testCase.wantCacheRead, cacheRead)
+			require.Equal(t, testCase.wantOutput, output)
+		})
+	}
 }

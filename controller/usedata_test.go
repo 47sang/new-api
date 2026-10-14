@@ -90,11 +90,24 @@ func TestGetDailyQuotaDatesSuccess(t *testing.T) {
 
 	const day = int64(86400)
 	require.NoError(t, model.DB.Create(&model.QuotaData{
-		ModelName: "gpt-4o",
-		CreatedAt: 5 * day,
-		Count:     2,
-		Quota:     20,
-		TokenUsed: 200,
+		ModelName:           "gpt-4o",
+		CreatedAt:           5 * day,
+		Count:               2,
+		Quota:               20,
+		TokenUsed:           200,
+		UncachedInputTokens: 120,
+		CacheReadTokens:     60,
+		OutputTokens:        20,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.QuotaData{
+		ModelName:           "gpt-4o",
+		CreatedAt:           5*day + 3600,
+		Count:               1,
+		Quota:               10,
+		TokenUsed:           100,
+		UncachedInputTokens: 50,
+		CacheReadTokens:     40,
+		OutputTokens:        10,
 	}).Error)
 
 	recorder := callDailyQuotaDates(t,
@@ -106,4 +119,8 @@ func TestGetDailyQuotaDatesSuccess(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), `"success":true`)
 	assert.Contains(t, recorder.Body.String(), "gpt-4o")
 	assert.Contains(t, recorder.Body.String(), strconv.FormatInt(5*day, 10))
+	// 三段拆分按天求和随接口一并返回
+	assert.Contains(t, recorder.Body.String(), `"uncached_input_tokens":170`)
+	assert.Contains(t, recorder.Body.String(), `"cache_read_tokens":100`)
+	assert.Contains(t, recorder.Body.String(), `"output_tokens":30`)
 }

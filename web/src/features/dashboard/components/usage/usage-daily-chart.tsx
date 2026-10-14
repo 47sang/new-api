@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { VChart } from '@visactor/react-vchart'
-import { useEffect, useMemo, useState } from 'react'
+import type { IVChart } from '@visactor/vchart'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -34,6 +35,10 @@ interface UsageDailyChartProps {
   metric: UsageMetric
   loading: boolean
   isEmpty: boolean
+  /** 当前选中的模型，用于图例重复点击时取消选中 */
+  selectedModel: string | null
+  /** 图例单选某个模型时回调；取消选中（再次点击同一项）时传 null */
+  onSelectedModelChange?: (model: string | null) => void
 }
 
 /** 柱状图顶部预留比例：最高柱与绘图区顶端之间保留 25% 高度给悬浮弹窗 */
@@ -63,6 +68,26 @@ export function UsageDailyChart(props: UsageDailyChartProps) {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
   const [themeReady, setThemeReady] = useState(false)
+  // 图例点击经 vchart 实例事件绑定：ref 始终提供最新的选中态与回调，
+  // 图表实例因指标/主题切换重建或规格更新后不会读到过期 state
+  const selectedModelRef = useRef(props.selectedModel)
+  const onSelectedModelChangeRef = useRef(props.onSelectedModelChange)
+  selectedModelRef.current = props.selectedModel
+  onSelectedModelChangeRef.current = props.onSelectedModelChange
+
+  const handleLegendItemClick = useCallback((event: { value?: unknown }) => {
+    // 单选图例的当前选中项：长度 1 为选中该模型，0 为取消选中。
+    // vchart 的单选图例不会自行取消选中（重复点击仍上报同一项），
+    // 因此同一模型再次传来时按取消选中处理，恢复 Top models 榜单
+    const selected = Array.isArray(event?.value) ? event.value : []
+    const next =
+      selected.length === 1 && typeof selected[0] === 'string'
+        ? selected[0]
+        : null
+    onSelectedModelChangeRef.current?.(
+      selectedModelRef.current === next ? null : next
+    )
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -197,6 +222,12 @@ export function UsageDailyChart(props: UsageDailyChartProps) {
             background: 'transparent',
           }}
           option={VCHART_OPTION}
+          onReady={(instance: IVChart) => {
+            // onReady 在挂载与每次规格更新后都会触发：先解绑再绑定，
+            // 保证同一实例上只有一个监听器
+            instance.off('legendItemClick', handleLegendItemClick)
+            instance.on('legendItemClick', handleLegendItemClick)
+          }}
         />
       )}
     </div>

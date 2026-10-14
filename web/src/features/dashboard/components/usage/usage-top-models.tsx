@@ -33,6 +33,8 @@ interface UsageTopModelsProps {
   metric: UsageMetric
   locale: Intl.LocalesArgument
   loading: boolean
+  /** 点击某一行选中该模型，查看它的 token 拆分（图例选中的键盘可达等价入口） */
+  onSelectModel?: (model: string) => void
 }
 
 /** 按指标格式化榜单数值（与柱状图 tooltip 同口径） */
@@ -57,27 +59,34 @@ export function UsageTopModels(props: UsageTopModelsProps) {
     <ul className='mt-3 space-y-3'>
       {props.models.map((rank) => (
         <li key={rank.model}>
-          <div className='flex items-center justify-between gap-2'>
-            <span className='truncate text-sm' title={rank.model}>
-              {rank.model}
-            </span>
-            <span className='shrink-0 text-xs tabular-nums text-muted-foreground'>
-              {formatRankValue(rank.value, props.metric, props.locale)}
-            </span>
-          </div>
-          <div
-            className='bg-muted mt-1 h-1.5 overflow-hidden rounded-full'
-            role='presentation'
+          <button
+            type='button'
+            className='hover:bg-muted/60 -mx-1 w-full cursor-pointer rounded-md px-1 py-0.5 text-left transition-colors'
+            onClick={() => props.onSelectModel?.(rank.model)}
+            title={t('View token breakdown')}
           >
+            <div className='flex items-center justify-between gap-2'>
+              <span className='truncate text-sm' title={rank.model}>
+                {rank.model}
+              </span>
+              <span className='shrink-0 text-xs tabular-nums text-muted-foreground'>
+                {formatRankValue(rank.value, props.metric, props.locale)}
+              </span>
+            </div>
             <div
-              className='h-full rounded-full transition-[width]'
-              style={{
-                width: `${Math.round(rank.ratio * 100)}%`,
-                backgroundColor:
-                  props.colorMap[rank.model] ?? USAGE_OTHER_COLOR,
-              }}
-            />
-          </div>
+              className='bg-muted mt-1 h-1.5 overflow-hidden rounded-full'
+              role='presentation'
+            >
+              <div
+                className='h-full rounded-full transition-[width]'
+                style={{
+                  width: `${Math.round(rank.ratio * 100)}%`,
+                  backgroundColor:
+                    props.colorMap[rank.model] ?? USAGE_OTHER_COLOR,
+                }}
+              />
+            </div>
+          </button>
         </li>
       ))}
     </ul>

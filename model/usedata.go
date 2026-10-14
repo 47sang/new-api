@@ -23,6 +23,12 @@ type QuotaData struct {
 	TokenUsed int    `json:"token_used" gorm:"default:0"`
 	Count     int    `json:"count" gorm:"default:0"`
 	Quota     int    `json:"quota" gorm:"default:0"`
+	// 用量分析页的 token 三段拆分。非缓存输入已按 usage 语义扣除缓存读，
+	// 与 service.usageDashboardTokenUsed 的语义分支保持一致；升级前写入的
+	// 历史行三列均为 0（AutoMigrate 默认值），读取方按无拆分数据处理。
+	UncachedInputTokens int `json:"uncached_input_tokens" gorm:"default:0"`
+	CacheReadTokens     int `json:"cache_read_tokens" gorm:"default:0"`
+	OutputTokens        int `json:"output_tokens" gorm:"default:0"`
 }
 
 type QuotaDataLogParams struct {
@@ -36,6 +42,10 @@ type QuotaDataLogParams struct {
 	TokenID   int
 	ChannelID int
 	NodeName  string
+	// 用量分析页的 token 三段拆分，见 QuotaData 同名字段
+	UncachedInputTokens int
+	CacheReadTokens     int
+	OutputTokens        int
 }
 
 func UpdateQuotaData() {
@@ -65,11 +75,17 @@ func logQuotaDataCache(quotaData *QuotaData) {
 	count := quotaData.Count
 	quota := quotaData.Quota
 	tokenUsed := quotaData.TokenUsed
+	uncachedInput := quotaData.UncachedInputTokens
+	cacheRead := quotaData.CacheReadTokens
+	output := quotaData.OutputTokens
 	cachedQuotaData, ok := CacheQuotaData[key]
 	if ok {
 		cachedQuotaData.Count += count
 		cachedQuotaData.Quota += quota
 		cachedQuotaData.TokenUsed += tokenUsed
+		cachedQuotaData.UncachedInputTokens += uncachedInput
+		cachedQuotaData.CacheReadTokens += cacheRead
+		cachedQuotaData.OutputTokens += output
 		quotaData = cachedQuotaData
 	}
 	CacheQuotaData[key] = quotaData
@@ -79,17 +95,20 @@ func LogQuotaData(params QuotaDataLogParams) {
 	// 只精确到小时
 	createdAt := params.CreatedAt - (params.CreatedAt % 3600)
 	quotaData := &QuotaData{
-		UserID:    params.UserID,
-		Username:  params.Username,
-		ModelName: params.ModelName,
-		CreatedAt: createdAt,
-		UseGroup:  params.UseGroup,
-		TokenID:   params.TokenID,
-		ChannelID: params.ChannelID,
-		NodeName:  params.NodeName,
-		Count:     1,
-		Quota:     params.Quota,
-		TokenUsed: params.TokenUsed,
+		UserID:              params.UserID,
+		Username:            params.Username,
+		ModelName:           params.ModelName,
+		CreatedAt:           createdAt,
+		UseGroup:            params.UseGroup,
+		TokenID:             params.TokenID,
+		ChannelID:           params.ChannelID,
+		NodeName:            params.NodeName,
+		Count:               1,
+		Quota:               params.Quota,
+		TokenUsed:           params.TokenUsed,
+		UncachedInputTokens: params.UncachedInputTokens,
+		CacheReadTokens:     params.CacheReadTokens,
+		OutputTokens:        params.OutputTokens,
 	}
 
 	CacheQuotaDataLock.Lock()
@@ -129,9 +148,12 @@ func increaseQuotaData(quotaData *QuotaData) {
 		Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ?",
 			quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName).
 		Updates(map[string]any{
-			"count":      gorm.Expr("count + ?", quotaData.Count),
-			"quota":      gorm.Expr("quota + ?", quotaData.Quota),
-			"token_used": gorm.Expr("token_used + ?", quotaData.TokenUsed),
+			"count":                 gorm.Expr("count + ?", quotaData.Count),
+			"quota":                 gorm.Expr("quota + ?", quotaData.Quota),
+			"token_used":            gorm.Expr("token_used + ?", quotaData.TokenUsed),
+			"uncached_input_tokens": gorm.Expr("uncached_input_tokens + ?", quotaData.UncachedInputTokens),
+			"cache_read_tokens":     gorm.Expr("cache_read_tokens + ?", quotaData.CacheReadTokens),
+			"output_tokens":         gorm.Expr("output_tokens + ?", quotaData.OutputTokens),
 		}).Error
 	if err != nil {
 		common.SysLog(common.LogText("increaseQuotaData error: %s", err))
@@ -160,6 +182,12 @@ func GetQuotaDataByUserId(userId int, startTime int64, endTime int64) (quotaData
 	return quotaDatas, err
 }
 
+// quotaDataTokenSplitSums 是按天/按模型聚合时三段拆分的求和表达式，
+// 与 QuotaData 的三个拆分列一一对应
+const quotaDataTokenSplitSums = "sum(uncached_input_tokens) as uncached_input_tokens, " +
+	"sum(cache_read_tokens) as cache_read_tokens, " +
+	"sum(output_tokens) as output_tokens"
+
 // GetQuotaDataDaily 按天聚合 quota_data 统计数据，供管理员用量分析页使用。
 // 参数:
 //   - startTime/endTime: 秒级时间戳闭区间 [startTime, endTime]
@@ -169,15 +197,15 @@ func GetQuotaDataByUserId(userId int, startTime int64, endTime int64) (quotaData
 //     created_at - tzOffsetSec 还原真实时刻。
 //   - groupByModel: true 时按 (天, model_name) 聚合，false 时仅按天聚合。
 //
-// 返回: 聚合后的 QuotaData 切片（count/quota/token_used 为当天求和值）。
+// 返回: 聚合后的 QuotaData 切片（count/quota/token_used 与三段拆分为当天求和值）。
 // 天边界仅用整数加法与取模表达，兼容 SQLite/MySQL/PostgreSQL。
 func GetQuotaDataDaily(startTime int64, endTime int64, tzOffsetSec int64, groupByModel bool) ([]*QuotaData, error) {
 	// tzOffsetSec 是已校验的整数，内联进表达式；GORM 的 Group 不支持占位参数
 	dayExpr := fmt.Sprintf("((created_at + %d) - ((created_at + %d) %% 86400))", tzOffsetSec, tzOffsetSec)
-	selectCols := dayExpr + " as created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used"
+	selectCols := dayExpr + " as created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, " + quotaDataTokenSplitSums
 	groupCols := dayExpr
 	if groupByModel {
-		selectCols = dayExpr + " as created_at, model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used"
+		selectCols = dayExpr + " as created_at, model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, " + quotaDataTokenSplitSums
 		groupCols += ", model_name"
 	}
 	var quotaDatas []*QuotaData
