@@ -37,6 +37,14 @@ export interface InflightStreamHandlers {
 
 export interface InflightStream {
   close: () => void
+  /** 手动重连：立刻顶掉当前连接重新发起，不等退避计时器 */
+  reconnect: () => void
+}
+
+/** 一次连接尝试：控制器只属于这一条连接，被顶掉后不再参与重连调度 */
+interface ConnectionAttempt {
+  controller: AbortController
+  superseded: boolean
 }
 
 /**
@@ -48,11 +56,12 @@ export interface InflightStream {
 export function subscribeInflightStream(
   handlers: InflightStreamHandlers
 ): InflightStream {
-  const controller = new AbortController()
   let closed = false
   let reconnectAttempt = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let idleTimer: ReturnType<typeof setTimeout> | undefined
+  /** 最近一次连接尝试；新尝试会顶掉它，保证同时只有一条连接 */
+  let current: ConnectionAttempt | undefined
 
   const clearTimers = () => {
     if (reconnectTimer) clearTimeout(reconnectTimer)
@@ -63,16 +72,17 @@ export function subscribeInflightStream(
 
   // 判死：超时未收到任何帧就让 read() 立刻抛出，同时中止 fetch 释放连接。
   // 不单纯依赖 abort 传播到底层流——不同浏览器/反代行为不一致。
-  const armIdleTimeout = (onIdle: () => void) => {
+  const armIdleTimeout = (attempt: ConnectionAttempt, onIdle: () => void) => {
     if (idleTimer) clearTimeout(idleTimer)
     idleTimer = setTimeout(() => {
-      controller.abort()
+      attempt.controller.abort()
       onIdle()
     }, IDLE_TIMEOUT_MS)
   }
 
-  const scheduleReconnect = () => {
-    if (closed) return
+  const scheduleReconnect = (attempt: ConnectionAttempt) => {
+    // 被更新的连接顶掉的旧 attempt 不再安排重连，否则两条连接会互相顶掉
+    if (closed || attempt.superseded) return
     handlers.onConnectionChange?.(false)
     const delay = Math.min(
       RECONNECT_MAX_DELAY_MS,
@@ -86,16 +96,27 @@ export function subscribeInflightStream(
 
   const connect = async () => {
     if (closed) return
+    // 每次连接都换一个新控制器。已中止的信号无法复用，否则本次失败之后
+    // 的所有 fetch 都会立刻拒绝，自动重连和手动重连一起失效，只能刷新页面。
+    if (current) {
+      current.superseded = true
+      current.controller.abort()
+    }
+    const attempt: ConnectionAttempt = {
+      controller: new AbortController(),
+      superseded: false,
+    }
+    current = attempt
     try {
       const headers = await getFreshAuthHeaders()
       if (closed) return
       const response = await fetch('/api/inflight/stream', {
         headers: { Accept: 'text/event-stream', ...headers },
-        signal: controller.signal,
+        signal: attempt.controller.signal,
         cache: 'no-store',
       })
       if (!response.ok || !response.body) {
-        scheduleReconnect()
+        scheduleReconnect(attempt)
         return
       }
       // 连上了：重置退避
@@ -110,7 +131,7 @@ export function subscribeInflightStream(
         failOnIdle = () => reject(new Error('inflight stream idle timeout'))
       })
       const touch = () => {
-        if (failOnIdle) armIdleTimeout(failOnIdle)
+        if (failOnIdle) armIdleTimeout(attempt, failOnIdle)
       }
       touch()
 
@@ -129,11 +150,11 @@ export function subscribeInflightStream(
         }
       }
       // 流正常结束（服务端关闭）：重连
-      scheduleReconnect()
+      scheduleReconnect(attempt)
     } catch {
       // 判死超时 / abort / 网络错误都走重连；卸载后 closed 为 true 直接返回
-      controller.abort()
-      scheduleReconnect()
+      attempt.controller.abort()
+      scheduleReconnect(attempt)
     }
   }
 
@@ -170,7 +191,14 @@ export function subscribeInflightStream(
     close: () => {
       closed = true
       clearTimers()
-      controller.abort()
+      current?.controller.abort()
+    },
+    reconnect: () => {
+      if (closed) return
+      clearTimers()
+      // 手动重连是用户主动行为：重置退避，立刻重发
+      reconnectAttempt = 0
+      void connect()
     },
   }
 }

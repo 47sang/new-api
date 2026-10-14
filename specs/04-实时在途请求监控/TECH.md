@@ -124,8 +124,11 @@ inflightRoute.Use(middleware.AdminAuth())
 - `lib/inflight-stream.ts`：`fetch` + `ReadableStream` 的 SSE 客户端——用
   `getFreshAuthHeaders()`（`src/lib/auth-session.ts:421`）拿 Bearer 头，按 `\n\n` 切帧、解析
   `event:` / `data:`，实现 1s→30s 退避重连与 45 秒无数据判死；401 时触发一次刷新后重连。
+  每次连接各持一个 `AbortController`：已中止的信号不能复用，否则本次失败之后的所有
+  `fetch` 都会立刻拒绝，自动重连与手动重连一起失效、只能刷新页面；被新连接顶掉的旧 Attempt
+  不再安排重连，避免两条连接互相顶掉。订阅句柄额外暴露 `reconnect()` 供「手动连接」按钮使用。
 - `components/usage/usage-inflight-panel.tsx`：卡片 + 汇总 + 分节表格 + 状态徽标 + 空态 / 骨架 /
-  「连接中…」。
+  「连接中…」+「手动连接」按钮（句柄存 ref，点击即重连、重置退避）。
 - `lib/index.ts` 导出新纯函数；`usage-dashboard.tsx` 在 `<UsageSummaryCard>` 之后挂载面板。
 
 ```mermaid
@@ -162,15 +165,17 @@ sequenceDiagram
 4. **纯函数（第 10、11、13、14、17 条）**——`lib/__tests__/inflight.test.ts`：按模型分组、节排序、
    空闲模型仍占节、`(当前-峰值)` 文本、时长秒格式化、估算标注。
 5. **面板渲染（第 9、12、16、18、19、20 条）**——`components/usage/__tests__/usage-inflight-panel.test.tsx`：
-   汇总数、分节表格、活跃 / 排队徽标、空状态、加载骨架、断线时保留快照并提示。
+   汇总数、分节表格、活跃 / 排队徽标、空状态、加载骨架、断线时保留快照并提示、手动连接按钮随连接
+   状态显隐且点击即重连。
 6. **SSE 客户端（第 4、5、6、7 条）**——同一测试文件内用假的 `fetch` 返回 `ReadableStream`：
-   帧解析、心跳超时判死、退避重连、卸载时中止、401 触发刷新。
+   帧解析、心跳超时判死、退避重连、卸载时中止、401 触发刷新、手动重连立即发起新连接、
+   被顶掉的旧连接不再安排重连、失败后重连换用未中止的新信号并能继续收到快照。
 
 ### 手动验证
 
 7. `bun run dev` + 本地后端，管理员登录 `/dashboard/usage`：用压测工具打几个并发请求，确认面板实时
    出现分节表格、时长走动、请求结束后行消失；人为让上游返回 429，确认对应模型峰值被抬升；
-   杀后台进程确认显示「连接中…」并自动恢复。
+   杀后台进程确认显示「连接中…」并自动恢复；再点「手动连接」确认不等退避立即恢复，且不需要刷新页面。
 8. `bun run typecheck`、涉及文件 `oxlint`、`bun run test`（dashboard 用例）；
    `bun run i18n:sync` 后 `git diff --stat` 只有预期文件。
    **不要跑 `bun run format`**——它会重写全仓文件。
@@ -181,7 +186,7 @@ sequenceDiagram
    `Relay()` 入口多出来的两次加锁开销（预期微秒级）。
 2. **goroutine / 内存泄漏**：`Finish` 由 `defer` 保证执行（含 panic 路径——panic 会被 `Relay()` 的
    第二个 defer 转成 error 后重新 panic，我的 defer 仍会运行）；SSE 循环监听 `ctx.Done()`；
-   前端卸载时 `AbortController.abort()`。
+   前端卸载时 `AbortController.abort()`（每次连接一个，abort 只终止当次连接）。
 3. **SSE 被反代缓冲**：显式设置 `X-Accel-Buffering: no` 与 `no-cache`；用户本地直连不受影响。
 4. **多节点只看到当前节点**：面板加一处次要文案说明，避免误读。
 5. **fork 合并冲突**：见上下文的「Fork 合并友好性」——既有文件仅 3 处共 8 行，且都是纯追加式钩子。

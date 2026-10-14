@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import type { InflightSnapshot } from '@/features/dashboard/lib'
@@ -64,9 +65,10 @@ function captureSubscription() {
     onSnapshot: (next: InflightSnapshot) => void
     onConnectionChange?: (connected: boolean) => void
   } | null = null
+  const reconnect = vi.fn()
   streamMock.mockImplementation((next: typeof handlers) => {
     handlers = next
-    return { close: vi.fn() }
+    return { close: vi.fn(), reconnect }
   })
   return {
     push(next: InflightSnapshot) {
@@ -79,6 +81,7 @@ function captureSubscription() {
         handlers?.onConnectionChange?.(connected)
       })
     },
+    reconnect,
   }
 }
 
@@ -178,6 +181,38 @@ describe('UsageInflightPanel', () => {
     })
     // 快照不清空
     expect(screen.getByText('gpt-4o')).toBeTruthy()
+  })
+
+  test('断线时显示手动连接按钮，点击后触发重连', async () => {
+    const user = userEvent.setup()
+    const sub = captureSubscription()
+    render(<UsageInflightPanel locale='en-US' />)
+
+    sub.push(snapshot([record('a', 'gpt-4o')]))
+    sub.setConnected(false)
+
+    await user.click(screen.getByRole('button', { name: 'Connect manually' }))
+
+    expect(sub.reconnect).toHaveBeenCalledTimes(1)
+  })
+
+  test('连接恢复正常后手动连接按钮消失', async () => {
+    const sub = captureSubscription()
+    render(<UsageInflightPanel locale='en-US' />)
+
+    sub.setConnected(false)
+    expect(
+      screen.getByRole('button', { name: 'Connect manually' })
+    ).toBeTruthy()
+
+    sub.setConnected(true)
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Connect manually' })
+      ).toBeNull()
+    })
+    expect(screen.queryByText('Connecting…')).toBeNull()
   })
 
   test('卸载时关闭流', () => {

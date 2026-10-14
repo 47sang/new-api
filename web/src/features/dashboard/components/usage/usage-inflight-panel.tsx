@@ -17,9 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Activity } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   EMPTY_INFLIGHT_SNAPSHOT,
@@ -28,6 +29,7 @@ import {
   groupInflightByModel,
   inflightElapsedSeconds,
   type InflightSnapshot,
+  type InflightStream,
 } from '@/features/dashboard/lib'
 import { subscribeInflightStream } from '@/features/dashboard/lib/inflight-stream'
 import { formatCompactNumber } from '@/lib/format'
@@ -55,6 +57,8 @@ export function UsageInflightPanel(props: UsageInflightPanelProps) {
     Math.floor(Date.now() / 1000)
   )
   const locale = props.locale
+  // 连接句柄放在 ref 里：重连按钮点击时直接调，不触发重渲染
+  const streamRef = useRef<InflightStream | null>(null)
 
   useEffect(() => {
     const stream = subscribeInflightStream({
@@ -64,7 +68,11 @@ export function UsageInflightPanel(props: UsageInflightPanelProps) {
       },
       onConnectionChange: setConnected,
     })
-    return () => stream.close()
+    streamRef.current = stream
+    return () => {
+      stream.close()
+      streamRef.current = null
+    }
   }, [])
 
   // 时长列每秒走动
@@ -214,9 +222,20 @@ export function UsageInflightPanel(props: UsageInflightPanelProps) {
             </span>
           </span>
           {!connected && (
-            <span className='text-amber-600 dark:text-amber-400'>
-              {t('Connecting…')}
-            </span>
+            <div className='flex items-center gap-2'>
+              <span className='text-amber-600 dark:text-amber-400'>
+                {t('Connecting…')}
+              </span>
+              {/* 自动重连可能一直不成功（服务端没起来、反代把流掐断等），
+                  给一个手动重连入口，省得刷新整个页面 */}
+              <Button
+                variant='outline'
+                size='xs'
+                onClick={() => streamRef.current?.reconnect()}
+              >
+                {t('Connect manually')}
+              </Button>
+            </div>
           )}
         </div>
       </header>
