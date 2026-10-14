@@ -62,7 +62,7 @@ describe('UsageModelCachePanel', () => {
     splitRow('gamma', { output_tokens: 50 }),
   ]
 
-  test('渲染标题、口径说明与每模型一行', () => {
+  test('渲染标题、口径说明与每模型一行（不重复展示模型列）', () => {
     const { container } = renderPanel(rows)
 
     expect(screen.getByText('Model cache share')).toBeTruthy()
@@ -72,55 +72,32 @@ describe('UsageModelCachePanel', () => {
     expect(header?.textContent).toContain(
       'Cache hit rate = cache read / (cache read + uncached input)'
     )
-    // 模型名在列表与堆叠条两块各出现一次
-    expect(screen.getAllByText('alpha')).toHaveLength(2)
-    expect(screen.getAllByText('beta')).toHaveLength(2)
-    expect(screen.getAllByText('gamma')).toHaveLength(2)
+    // 每个模型名只出现一次：不再并排展示第二套模型列
+    expect(screen.getAllByText('alpha')).toHaveLength(1)
+    expect(screen.getAllByText('beta')).toHaveLength(1)
+    expect(screen.getAllByText('gamma')).toHaveLength(1)
+    expect(container.querySelectorAll('[role="presentation"]')).toHaveLength(0)
   })
 
-  test('列表与堆叠条都按三项合计降序排列', () => {
+  test('列表按三项合计降序排列', () => {
     const { container } = renderPanel(rows)
     // 合计：alpha 1200、beta 1000、gamma 50
     const listItems = container.querySelectorAll('li')
-    expect(listItems).toHaveLength(6) // 3 行列表 + 3 条堆叠
-    const firstListItem = listItems[0] as HTMLElement
-    expect(firstListItem.textContent).toContain('alpha')
-    const lastListItem = listItems[5] as HTMLElement
-    expect(lastListItem.textContent).toContain('gamma')
+    expect(listItems).toHaveLength(3)
+    expect((listItems[0] as HTMLElement).textContent).toContain('alpha')
+    expect((listItems[2] as HTMLElement).textContent).toContain('gamma')
   })
 
-  test('堆叠条三段宽度与占比一致', () => {
+  test('每行给出三项数值、合计与命中率', () => {
     const { container } = renderPanel(rows)
-    const bars = container.querySelectorAll('[role="presentation"]')
-    // 3 条堆叠条
-    expect(bars).toHaveLength(3)
-    const alphaBar = bars[0] as HTMLElement
-    const segments = alphaBar.children
-    // alpha: 缓存读 700/1200、非缓存读 300/1200、输出 200/1200
-    expect(segments).toHaveLength(3)
-    const widths = [...segments].map((segment) =>
-      Number.parseFloat((segment as HTMLElement).style.width)
-    )
-    expect(widths[0]).toBeCloseTo((700 / 1200) * 100)
-    expect(widths[1]).toBeCloseTo(25)
-    expect(widths[2]).toBeCloseTo((200 / 1200) * 100)
-    expect((segments[0] as HTMLElement).style.backgroundColor).toBe(
-      'rgb(90, 216, 166)'
-    )
-    expect((segments[2] as HTMLElement).style.backgroundColor).toBe(
-      'rgb(91, 143, 249)'
-    )
-  })
-
-  test('堆叠条 title 给出三项精确数值与命中率', () => {
-    const { container } = renderPanel(rows)
-    const bars = container.querySelectorAll('[role="presentation"]')
-    const title = (bars[0] as HTMLElement).getAttribute('title') ?? ''
-    expect(title).toContain('alpha')
-    expect(title).toContain('Cache Read: 700 (58.33%)')
-    expect(title).toContain('Uncached Input: 300 (25%)')
-    expect(title).toContain('Output: 200 (16.67%)')
-    expect(title).toContain('Cache hit rate: 70%')
+    const firstRow = container.querySelector('li') as HTMLElement
+    const text = firstRow.textContent ?? ''
+    // alpha：缓存读 700、非缓存读 300、输出 200、合计 1.2K、命中率 700/1000
+    expect(text).toContain('700')
+    expect(text).toContain('300')
+    expect(text).toContain('200')
+    expect(text).toContain('1.2K')
+    expect(text).toContain('70%')
   })
 
   test('超出上限的模型合并为「其他」行，命中率按合计重算', () => {
@@ -137,10 +114,10 @@ describe('UsageModelCachePanel', () => {
         loading={false}
       />
     )
-    // 前 2 名 + 其他，两块（列表 + 堆叠条）各一行
-    expect(screen.getAllByText('Other')).toHaveLength(2)
+    // 前 2 名 + 其他，合并为同一个列表
+    expect(screen.getAllByText('Other')).toHaveLength(1)
     const listItems = container.querySelectorAll('li')
-    expect(listItems).toHaveLength(6) // (2 + 其他) × 2 块
+    expect(listItems).toHaveLength(3)
     // 其他 = gamma + delta + epsilon：缓存读 15、非缓存读 25、输出 50，
     // 命中率 = 15 / 40 = 37.5%（按合并后的合计重算，不是平均）
     const otherListItem = listItems[2] as HTMLElement
