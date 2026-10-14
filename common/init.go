@@ -93,7 +93,7 @@ func InitEnv() {
 	initNodeNameIdentity()
 	TLSInsecureSkipVerify = GetEnvOrDefaultBool("TLS_INSECURE_SKIP_VERIFY", false)
 	RequestResponseLogEnabled = GetEnvOrDefaultBool("REQUEST_RESPONSE_LOG_ENABLED", true)
-	RequestResponseLogRetentionDays = GetEnvOrDefault("REQUEST_RESPONSE_LOG_RETENTION_DAYS", 7)
+	RequestResponseLogRetentionDays = GetEnvOrDefault("REQUEST_RESPONSE_LOG_RETENTION_DAYS", 3)
 	if TLSInsecureSkipVerify {
 		if tr, ok := http.DefaultTransport.(*http.Transport); ok && tr != nil {
 			if tr.TLSClientConfig != nil {

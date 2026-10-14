@@ -223,7 +223,7 @@ LOG_DB.Clauses(clauses.OnConflict{
 | 配置 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
 | 功能开关 | `REQUEST_RESPONSE_LOG_ENABLED` | `true` | 是否开启请求/响应日志记录（显式设 `false` 可关闭） |
-| 保留天数 | `REQUEST_RESPONSE_LOG_RETENTION_DAYS` | `7` | 日志保留天数，`0` = 永久 |
+| 保留天数 | `REQUEST_RESPONSE_LOG_RETENTION_DAYS` | `3` | 日志保留天数，`0` = 永久 |
 | Option 表键 | `RequestResponseLogEnabled` | `true` | 运行时动态开关（与 env 联动） |
 | 图形开关 | 系统设置 → 运维 → 日志维护 | 开 | 前端「记录完整请求体和响应体」开关，读写 Option 键 |
 

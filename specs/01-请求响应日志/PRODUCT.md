@@ -64,7 +64,7 @@
 
 ### 3.6 数据保留与清理
 
-- 默认保留 **7 天**，可通过环境变量 `REQUEST_RESPONSE_LOG_RETENTION_DAYS` 调整。
+- 默认保留 **3 天**，可通过环境变量 `REQUEST_RESPONSE_LOG_RETENTION_DAYS` 调整。
 - 设为 `0` 表示永久保留，不自动清理。
 - 清理按 `created_at` 日期滚动删除，每 24 小时执行一次（启动时也会执行一次）；清理任务常驻，运行时开启开关后无需重启即可生效。
 - 不支持 ClickHouse 日志库（该库不迁移 `request_response_logs` 表，配置后功能自动禁用）。
