@@ -241,6 +241,108 @@ func TestLogQuotaDataAccumulatesTokenSplitOnBothFlushPaths(t *testing.T) {
 	require.Equal(t, 30, row.OutputTokens)
 }
 
+// 三段拆分与并列的缓存读/写指标必须互不覆盖：两套字段同源但角色不同，
+// 任何一侧在累加路径上漏列或串列，都会让另一侧的看板静默拿到 0 或错值。
+func TestLogQuotaDataKeepsSplitAndCacheMetricsIndependent(t *testing.T) {
+	truncateTables(t)
+	CacheQuotaDataLock.Lock()
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+
+	params := QuotaDataLogParams{
+		UserID:              1,
+		Username:            "alice",
+		ModelName:           "gpt-a",
+		CreatedAt:           3661,
+		UseGroup:            "vip",
+		TokenID:             11,
+		ChannelID:           1,
+		NodeName:            "node-a",
+		Quota:               100,
+		TokenUsed:           100,
+		UncachedInputTokens: 60,
+		CachedInputTokens:   30,
+		OutputTokens:        10,
+		CacheReadTokens:     30,
+		CacheCreationTokens: 5,
+	}
+	LogQuotaData(params)
+	// 同一聚合键第二次累加：走内存缓存合并
+	LogQuotaData(params)
+	SaveQuotaDataCache()
+
+	var row QuotaData
+	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
+	// 三段拆分各自累加
+	require.Equal(t, 120, row.UncachedInputTokens)
+	require.Equal(t, int64(60), row.CachedInputTokens)
+	require.Equal(t, 20, row.OutputTokens)
+	// 并列的缓存读/写指标独立累加，不与三段拆分串列
+	require.Equal(t, int64(60), row.CacheReadTokens)
+	require.Equal(t, int64(10), row.CacheCreationTokens)
+
+	// 行已存在时再累加一次：走 increaseQuotaData 的增量 UPDATE
+	LogQuotaData(params)
+	SaveQuotaDataCache()
+
+	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
+	require.Equal(t, 180, row.UncachedInputTokens)
+	require.Equal(t, int64(90), row.CachedInputTokens)
+	require.Equal(t, 30, row.OutputTokens)
+	require.Equal(t, int64(90), row.CacheReadTokens)
+	require.Equal(t, int64(15), row.CacheCreationTokens)
+}
+
+// 两条读取链路各取各的列：用量分析页的 /api/data/daily 只返回三段拆分，
+// 旧接口只返回并列的缓存读/写指标，互不串味。
+func TestQuotaDataQueryPathsReturnTheirOwnColumns(t *testing.T) {
+	truncateTables(t)
+	CacheQuotaDataLock.Lock()
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+
+	LogQuotaData(QuotaDataLogParams{
+		UserID:              1,
+		Username:            "alice",
+		ModelName:           "gpt-a",
+		CreatedAt:           3661,
+		UseGroup:            "vip",
+		TokenID:             11,
+		ChannelID:           1,
+		NodeName:            "node-a",
+		Quota:               100,
+		TokenUsed:           100,
+		UncachedInputTokens: 60,
+		CachedInputTokens:   30,
+		OutputTokens:        10,
+		CacheReadTokens:     30,
+		CacheCreationTokens: 5,
+	})
+	SaveQuotaDataCache()
+
+	// 用量分析页链路：三段拆分齐全
+	daily, err := GetQuotaDataDaily(0, 86400, 0, true)
+	require.NoError(t, err)
+	require.Len(t, daily, 1)
+	require.Equal(t, 60, daily[0].UncachedInputTokens)
+	require.Equal(t, int64(30), daily[0].CachedInputTokens)
+	require.Equal(t, 10, daily[0].OutputTokens)
+	// 旧接口的两列不在该查询的 select 里，保持零值
+	require.Equal(t, int64(0), daily[0].CacheReadTokens)
+	require.Equal(t, int64(0), daily[0].CacheCreationTokens)
+
+	// 看板链路：并列的缓存读/写指标齐全
+	legacy, err := GetQuotaDataByUsername("alice", 0, 86400)
+	require.NoError(t, err)
+	require.Len(t, legacy, 1)
+	require.Equal(t, int64(30), legacy[0].CacheReadTokens)
+	require.Equal(t, int64(5), legacy[0].CacheCreationTokens)
+	// 三段拆分不在该查询的 select 里，保持零值
+	require.Equal(t, 0, legacy[0].UncachedInputTokens)
+	require.Equal(t, int64(0), legacy[0].CachedInputTokens)
+	require.Equal(t, 0, legacy[0].OutputTokens)
+}
+
 func TestQuotaDataTokenSplit(t *testing.T) {
 	anthropicOther := NewLogOther()
 	anthropicOther.SetPublic("cache_tokens", 400)
