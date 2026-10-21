@@ -214,7 +214,7 @@ func TestLogQuotaDataAccumulatesTokenSplitOnBothFlushPaths(t *testing.T) {
 		Quota:               100,
 		TokenUsed:           100,
 		UncachedInputTokens: 60,
-		CacheReadTokens:     30,
+		CachedInputTokens:   30,
 		OutputTokens:        10,
 	}
 	LogQuotaData(params)
@@ -227,7 +227,7 @@ func TestLogQuotaDataAccumulatesTokenSplitOnBothFlushPaths(t *testing.T) {
 	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
 	require.Equal(t, 2, row.Count)
 	require.Equal(t, 120, row.UncachedInputTokens)
-	require.Equal(t, 60, row.CacheReadTokens)
+	require.Equal(t, int64(60), row.CachedInputTokens)
 	require.Equal(t, 20, row.OutputTokens)
 
 	// 行已存在时再累加一次：走 increaseQuotaData 的增量 UPDATE
@@ -237,7 +237,7 @@ func TestLogQuotaDataAccumulatesTokenSplitOnBothFlushPaths(t *testing.T) {
 	require.NoError(t, DB.Where("model_name = ?", "gpt-a").First(&row).Error)
 	require.Equal(t, 3, row.Count)
 	require.Equal(t, 180, row.UncachedInputTokens)
-	require.Equal(t, 90, row.CacheReadTokens)
+	require.Equal(t, int64(90), row.CachedInputTokens)
 	require.Equal(t, 30, row.OutputTokens)
 }
 

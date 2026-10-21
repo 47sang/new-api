@@ -28,6 +28,8 @@ export interface QuotaDataItem {
   username?: string
   model_name?: string
   created_at: number
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
   token_used?: number
   count?: number
   quota?: number
@@ -173,7 +175,9 @@ export type UsageMetric = 'tokens' | 'spend' | 'requests'
 
 // GET /api/data/daily 返回行。created_at 为「本地日 0 点伪时间戳」（秒），
 // 减去请求时的 tz_offset 即为该日 0 点的真实 UTC 时刻。
-// 三段拆分为用量分析页的 token 构成统计，升级前写入的历史行没有这三个字段
+// 三段拆分为用量分析页的 token 构成统计，升级前写入的历史行没有这三个字段。
+// cached_input_tokens 与 QuotaDataItem.cache_read_tokens 同源但角色不同：前者参与
+// 三项之和，后者是与 token_used 并列的独立指标，两者互不覆盖。
 export interface DailyUsageItem {
   created_at: number
   model_name?: string
@@ -181,7 +185,7 @@ export interface DailyUsageItem {
   count?: number
   quota?: number
   uncached_input_tokens?: number
-  cache_read_tokens?: number
+  cached_input_tokens?: number
   output_tokens?: number
 }
 

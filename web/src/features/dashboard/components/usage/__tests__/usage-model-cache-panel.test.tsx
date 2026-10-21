@@ -30,7 +30,7 @@ function splitRow(
   model: string,
   values: {
     uncached_input_tokens?: number
-    cache_read_tokens?: number
+    cached_input_tokens?: number
     output_tokens?: number
   }
 ): DailyUsageItem {
@@ -55,10 +55,10 @@ describe('UsageModelCachePanel', () => {
   const rows = [
     splitRow('alpha', {
       uncached_input_tokens: 300,
-      cache_read_tokens: 700,
+      cached_input_tokens: 700,
       output_tokens: 200,
     }),
-    splitRow('beta', { uncached_input_tokens: 900, cache_read_tokens: 100 }),
+    splitRow('beta', { uncached_input_tokens: 900, cached_input_tokens: 100 }),
     splitRow('gamma', { output_tokens: 50 }),
   ]
 
@@ -144,8 +144,8 @@ describe('UsageModelCachePanel', () => {
   test('超出上限的模型合并为「其他」行，命中率按合计重算', () => {
     const many = [
       ...rows,
-      splitRow('delta', { cache_read_tokens: 10, uncached_input_tokens: 10 }),
-      splitRow('epsilon', { cache_read_tokens: 5, uncached_input_tokens: 15 }),
+      splitRow('delta', { cached_input_tokens: 10, uncached_input_tokens: 10 }),
+      splitRow('epsilon', { cached_input_tokens: 5, uncached_input_tokens: 15 }),
     ]
     const { container } = render(
       <UsageModelCachePanel

@@ -282,7 +282,7 @@ describe('sumTokenSplit', () => {
     model: string,
     values: {
       uncached_input_tokens?: number
-      cache_read_tokens?: number
+      cached_input_tokens?: number
       output_tokens?: number
     }
   ): DailyUsageItem => ({ created_at: dayTs, model_name: model, ...values })
@@ -291,17 +291,17 @@ describe('sumTokenSplit', () => {
     const rows = [
       splitRow(DAY, 'a', {
         uncached_input_tokens: 300,
-        cache_read_tokens: 700,
+        cached_input_tokens: 700,
         output_tokens: 200,
       }),
       splitRow(DAY, 'b', {
         uncached_input_tokens: 100,
-        cache_read_tokens: 0,
+        cached_input_tokens: 0,
         output_tokens: 50,
       }),
       splitRow(2 * DAY, 'a', {
         uncached_input_tokens: 100,
-        cache_read_tokens: 100,
+        cached_input_tokens: 100,
         output_tokens: 100,
       }),
     ]
@@ -319,7 +319,7 @@ describe('sumTokenSplit', () => {
   test('不传 model 时汇总全部模型', () => {
     const rows = [
       splitRow(DAY, 'a', { uncached_input_tokens: 10, output_tokens: 5 }),
-      splitRow(DAY, 'b', { cache_read_tokens: 20 }),
+      splitRow(DAY, 'b', { cached_input_tokens: 20 }),
     ]
     const split = sumTokenSplit(rows)
     expect(split.total).toBe(35)
@@ -350,7 +350,7 @@ describe('computeModelTokenSplits', () => {
     const ranks = computeModelTokenSplits([
       splitRow('beta', { uncached_input_tokens: 500 }),
       splitRow('alpha', { uncached_input_tokens: 500 }),
-      splitRow('gamma', { cache_read_tokens: 900 }),
+      splitRow('gamma', { cached_input_tokens: 900 }),
       splitRow('legacy', { token_used: 999 }),
     ])
     expect(ranks.entries.map((entry) => entry.model)).toEqual([
@@ -363,9 +363,9 @@ describe('computeModelTokenSplits', () => {
 
   test('超出 limit 的模型合并为 other，三项求和且命中率按合计重算', () => {
     const rows = [
-      splitRow('a', { cache_read_tokens: 90, uncached_input_tokens: 10 }),
-      splitRow('b', { cache_read_tokens: 70, uncached_input_tokens: 20 }),
-      splitRow('c', { cache_read_tokens: 30, uncached_input_tokens: 30 }),
+      splitRow('a', { cached_input_tokens: 90, uncached_input_tokens: 10 }),
+      splitRow('b', { cached_input_tokens: 70, uncached_input_tokens: 20 }),
+      splitRow('c', { cached_input_tokens: 30, uncached_input_tokens: 30 }),
       splitRow('d', { output_tokens: 40 }),
     ]
     const ranks = computeModelTokenSplits(rows, 2)
@@ -395,7 +395,7 @@ describe('tokenSplitShares', () => {
           created_at: DAY,
           model_name: 'a',
           uncached_input_tokens: 25,
-          cache_read_tokens: 25,
+          cached_input_tokens: 25,
           output_tokens: 50,
         },
       ])

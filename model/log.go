@@ -405,7 +405,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		if tokenUsed == 0 {
 			tokenUsed = params.PromptTokens + params.CompletionTokens
 		}
+		// 三段拆分的缓存输入与并列指标 CacheReadTokens 同源（上游 usage 的
+		// cache_tokens），共用一次提取，避免两处逻辑各自漂移。
 		uncachedInput, cacheRead, output := quotaDataTokenSplit(other, params.PromptTokens, params.CompletionTokens)
+		// 结算路径已归一化缓存写总量，不再叠加 5m/1h 拆分或从价格反推。
+		var cacheCreationTokens int
+		if other != nil {
+			cacheCreationTokens, _ = other.public["cache_write_tokens"].(int)
+		}
 		LogQuotaData(QuotaDataLogParams{
 			UserID:              userId,
 			Username:            username,
@@ -418,13 +425,15 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			ChannelID:           params.ChannelId,
 			NodeName:            common.NodeName,
 			UncachedInputTokens: uncachedInput,
-			CacheReadTokens:     cacheRead,
+			CachedInputTokens:   int64(cacheRead),
 			OutputTokens:        output,
+			CacheReadTokens:     int64(cacheRead),
+			CacheCreationTokens: int64(cacheCreationTokens),
 		})
 	}
 }
 
-// quotaDataTokenSplit 推导写入 quota_data 的 token 三段拆分（非缓存输入、缓存读、输出）。
+// quotaDataTokenSplit 推导写入 quota_data 的 token 三段拆分（非缓存输入、缓存输入、输出）。
 //
 // prompt_tokens 是否已包含缓存读由本行 other.usage_semantic 标记决定：anthropic 语义下
 // prompt_tokens 是不含缓存的剩余量，其余口径已含缓存命中、需先扣除，与

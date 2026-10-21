@@ -128,7 +128,7 @@ export interface ModelTokenSplitRanks {
 function tokenSplitOfRow(row: DailyUsageItem) {
   return {
     uncachedInput: Number(row.uncached_input_tokens) || 0,
-    cacheRead: Number(row.cache_read_tokens) || 0,
+    cacheRead: Number(row.cached_input_tokens) || 0,
     output: Number(row.output_tokens) || 0,
   }
 }

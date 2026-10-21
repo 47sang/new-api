@@ -96,7 +96,7 @@ func TestGetDailyQuotaDatesSuccess(t *testing.T) {
 		Quota:               20,
 		TokenUsed:           200,
 		UncachedInputTokens: 120,
-		CacheReadTokens:     60,
+		CachedInputTokens:   60,
 		OutputTokens:        20,
 	}).Error)
 	require.NoError(t, model.DB.Create(&model.QuotaData{
@@ -106,7 +106,7 @@ func TestGetDailyQuotaDatesSuccess(t *testing.T) {
 		Quota:               10,
 		TokenUsed:           100,
 		UncachedInputTokens: 50,
-		CacheReadTokens:     40,
+		CachedInputTokens:   40,
 		OutputTokens:        10,
 	}).Error)
 
@@ -121,6 +121,6 @@ func TestGetDailyQuotaDatesSuccess(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), strconv.FormatInt(5*day, 10))
 	// 三段拆分按天求和随接口一并返回
 	assert.Contains(t, recorder.Body.String(), `"uncached_input_tokens":170`)
-	assert.Contains(t, recorder.Body.String(), `"cache_read_tokens":100`)
+	assert.Contains(t, recorder.Body.String(), `"cached_input_tokens":100`)
 	assert.Contains(t, recorder.Body.String(), `"output_tokens":30`)
 }

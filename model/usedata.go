@@ -27,8 +27,14 @@ type QuotaData struct {
 	// 与 service.usageDashboardTokenUsed 的语义分支保持一致；升级前写入的
 	// 历史行三列均为 0（AutoMigrate 默认值），读取方按无拆分数据处理。
 	UncachedInputTokens int `json:"uncached_input_tokens" gorm:"default:0"`
-	CacheReadTokens     int `json:"cache_read_tokens" gorm:"default:0"`
-	OutputTokens        int `json:"output_tokens" gorm:"default:0"`
+	// 缓存输入是三段拆分里的缓存命中部分，与 UncachedInputTokens 对偶，三项之和
+	// 即 token_used。它与 CacheReadTokens 同源（上游 usage 的缓存读）但角色不同，
+	// 因此拆成两列，避免同名不同义在后续迭代里互相覆盖。
+	CachedInputTokens int64 `json:"cached_input_tokens" gorm:"default:0"`
+	OutputTokens      int   `json:"output_tokens" gorm:"default:0"`
+	// 上游 usage 的缓存读/写原值，与 token_used 并列展示，不参与三段拆分。
+	CacheReadTokens     int64 `json:"cache_read_tokens" gorm:"default:0"`
+	CacheCreationTokens int64 `json:"cache_creation_tokens" gorm:"default:0"`
 }
 
 type QuotaDataLogParams struct {
@@ -44,8 +50,11 @@ type QuotaDataLogParams struct {
 	NodeName  string
 	// 用量分析页的 token 三段拆分，见 QuotaData 同名字段
 	UncachedInputTokens int
-	CacheReadTokens     int
+	CachedInputTokens   int64
 	OutputTokens        int
+	// 上游 usage 的缓存读/写原值，见 QuotaData 同名字段
+	CacheReadTokens     int64
+	CacheCreationTokens int64
 }
 
 func UpdateQuotaData() {
@@ -76,16 +85,20 @@ func logQuotaDataCache(quotaData *QuotaData) {
 	quota := quotaData.Quota
 	tokenUsed := quotaData.TokenUsed
 	uncachedInput := quotaData.UncachedInputTokens
-	cacheRead := quotaData.CacheReadTokens
+	cachedInput := quotaData.CachedInputTokens
 	output := quotaData.OutputTokens
+	cacheRead := quotaData.CacheReadTokens
+	cacheCreation := quotaData.CacheCreationTokens
 	cachedQuotaData, ok := CacheQuotaData[key]
 	if ok {
 		cachedQuotaData.Count += count
 		cachedQuotaData.Quota += quota
 		cachedQuotaData.TokenUsed += tokenUsed
 		cachedQuotaData.UncachedInputTokens += uncachedInput
-		cachedQuotaData.CacheReadTokens += cacheRead
+		cachedQuotaData.CachedInputTokens += cachedInput
 		cachedQuotaData.OutputTokens += output
+		cachedQuotaData.CacheReadTokens += cacheRead
+		cachedQuotaData.CacheCreationTokens += cacheCreation
 		quotaData = cachedQuotaData
 	}
 	CacheQuotaData[key] = quotaData
@@ -107,8 +120,10 @@ func LogQuotaData(params QuotaDataLogParams) {
 		Quota:               params.Quota,
 		TokenUsed:           params.TokenUsed,
 		UncachedInputTokens: params.UncachedInputTokens,
-		CacheReadTokens:     params.CacheReadTokens,
+		CachedInputTokens:   params.CachedInputTokens,
 		OutputTokens:        params.OutputTokens,
+		CacheReadTokens:     max(0, params.CacheReadTokens),
+		CacheCreationTokens: max(0, params.CacheCreationTokens),
 	}
 
 	CacheQuotaDataLock.Lock()
@@ -152,8 +167,10 @@ func increaseQuotaData(quotaData *QuotaData) {
 			"quota":                 gorm.Expr("quota + ?", quotaData.Quota),
 			"token_used":            gorm.Expr("token_used + ?", quotaData.TokenUsed),
 			"uncached_input_tokens": gorm.Expr("uncached_input_tokens + ?", quotaData.UncachedInputTokens),
-			"cache_read_tokens":     gorm.Expr("cache_read_tokens + ?", quotaData.CacheReadTokens),
+			"cached_input_tokens":   gorm.Expr("cached_input_tokens + ?", quotaData.CachedInputTokens),
 			"output_tokens":         gorm.Expr("output_tokens + ?", quotaData.OutputTokens),
+			"cache_read_tokens":     gorm.Expr("cache_read_tokens + ?", quotaData.CacheReadTokens),
+			"cache_creation_tokens": gorm.Expr("cache_creation_tokens + ?", quotaData.CacheCreationTokens),
 		}).Error
 	if err != nil {
 		common.SysLog(common.LogText("increaseQuotaData error: %s", err))
@@ -164,7 +181,7 @@ func GetQuotaDataByUsername(username string, startTime int64, endTime int64) (qu
 	var quotaDatas []*QuotaData
 	// 从quota_data表中查询数据
 	err = DB.Table("quota_data").
-		Select("user_id, username, model_name, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Select("user_id, username, model_name, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, sum(cache_read_tokens) as cache_read_tokens, sum(cache_creation_tokens) as cache_creation_tokens").
 		Where("username = ? and created_at >= ? and created_at <= ?", username, startTime, endTime).
 		Group("user_id, username, model_name, created_at").
 		Find(&quotaDatas).Error
@@ -175,7 +192,7 @@ func GetQuotaDataByUserId(userId int, startTime int64, endTime int64) (quotaData
 	var quotaDatas []*QuotaData
 	// 从quota_data表中查询数据
 	err = DB.Table("quota_data").
-		Select("user_id, username, model_name, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Select("user_id, username, model_name, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, sum(cache_read_tokens) as cache_read_tokens, sum(cache_creation_tokens) as cache_creation_tokens").
 		Where("user_id = ? and created_at >= ? and created_at <= ?", userId, startTime, endTime).
 		Group("user_id, username, model_name, created_at").
 		Find(&quotaDatas).Error
@@ -185,7 +202,7 @@ func GetQuotaDataByUserId(userId int, startTime int64, endTime int64) (quotaData
 // quotaDataTokenSplitSums 是按天/按模型聚合时三段拆分的求和表达式，
 // 与 QuotaData 的三个拆分列一一对应
 const quotaDataTokenSplitSums = "sum(uncached_input_tokens) as uncached_input_tokens, " +
-	"sum(cache_read_tokens) as cache_read_tokens, " +
+	"sum(cached_input_tokens) as cached_input_tokens, " +
 	"sum(output_tokens) as output_tokens"
 
 // GetQuotaDataDaily 按天聚合 quota_data 统计数据，供管理员用量分析页使用。
@@ -220,7 +237,7 @@ func GetQuotaDataDaily(startTime int64, endTime int64, tzOffsetSec int64, groupB
 func GetQuotaDataGroupByUser(startTime int64, endTime int64) (quotaData []*QuotaData, err error) {
 	var quotaDatas []*QuotaData
 	err = DB.Table("quota_data").
-		Select("username, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Select("username, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, sum(cache_read_tokens) as cache_read_tokens, sum(cache_creation_tokens) as cache_creation_tokens").
 		Where("created_at >= ? and created_at <= ?", startTime, endTime).
 		Group("username, created_at").
 		Find(&quotaDatas).Error
@@ -235,6 +252,6 @@ func GetAllQuotaDates(startTime int64, endTime int64, username string) (quotaDat
 	// 从quota_data表中查询数据
 	// only select model_name, sum(count) as count, sum(quota) as quota, model_name, created_at from quota_data group by model_name, created_at;
 	//err = DB.Table("quota_data").Where("created_at >= ? and created_at <= ?", startTime, endTime).Find(&quotaDatas).Error
-	err = DB.Table("quota_data").Select("model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, created_at").Where("created_at >= ? and created_at <= ?", startTime, endTime).Group("model_name, created_at").Find(&quotaDatas).Error
+	err = DB.Table("quota_data").Select("model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, sum(cache_read_tokens) as cache_read_tokens, sum(cache_creation_tokens) as cache_creation_tokens, created_at").Where("created_at >= ? and created_at <= ?", startTime, endTime).Group("model_name, created_at").Find(&quotaDatas).Error
 	return quotaDatas, err
 }
