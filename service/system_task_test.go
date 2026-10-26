@@ -236,7 +236,9 @@ func TestEnqueueSystemTaskReportsCreatedAndExistingActive(t *testing.T) {
 
 // TestRunLogCleanupTaskAlsoDeletesRequestResponseLogs 验证手动清理历史日志的联动契约：
 // 清理 logs 表时按同一目标时间戳同步删除 request_response_logs（两表仅靠 request_id
-// 逻辑关联、无外键级联），时间戳之后的记录在两表中均保留，删除量分别记入任务结果
+// 逻辑关联、无外键级联），时间戳之后的记录在两表中均保留，删除量分别记入任务结果。
+// 功能开关置为 false：联动清理是管理员显式发起的数据生命周期操作，历史上曾因开关关闭
+// 而跳过 request_response_logs，留下永远清不掉的大文本孤儿行
 func TestRunLogCleanupTaskAlsoDeletesRequestResponseLogs(t *testing.T) {
 	truncate(t)
 	require.NoError(t, model.LOG_DB.AutoMigrate(&model.RequestResponseLog{}))
@@ -259,7 +261,7 @@ func TestRunLogCleanupTaskAlsoDeletesRequestResponseLogs(t *testing.T) {
 	require.NoError(t, model.LOG_DB.Create(&respLogs).Error)
 
 	previous := common.RequestResponseLogEnabled
-	common.RequestResponseLogEnabled = true
+	common.RequestResponseLogEnabled = false
 	t.Cleanup(func() { common.RequestResponseLogEnabled = previous })
 
 	task, err := model.CreateSystemTask(model.SystemTaskTypeLogCleanup, LogCleanupPayload{TargetTimestamp: target, BatchSize: 1}, LogCleanupState{})

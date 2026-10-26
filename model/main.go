@@ -422,8 +422,10 @@ func migrateLOGDB() error {
 		return err
 	}
 
-	// 启动时清理过期的请求/响应日志
-	if common.RequestResponseLogEnabled && common.RequestResponseLogRetentionDays > 0 {
+	// 启动时清理过期的请求/响应日志。
+	// 与功能开关无关：走到这里 ClickHouse 已提前 return，表一定存在；
+	// 关闭开关只停止记录，保留期清理必须继续，否则存量数据永久堆积
+	if common.RequestResponseLogRetentionDays > 0 {
 		common.SysLog("cleaning up expired request/response logs, retention days: " + strconv.Itoa(common.RequestResponseLogRetentionDays))
 		deleted, err := CleanupOldRequestResponseLogs(common.RequestResponseLogRetentionDays)
 		if err != nil {

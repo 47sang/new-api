@@ -409,10 +409,11 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		return
 	}
 
-	// 联动清理 request_response_logs：功能开启且日志库非 ClickHouse 时该表才存在
+	// 联动清理 request_response_logs：日志库非 ClickHouse 时该表一定存在
 	// （ClickHouse 日志库下功能被强制禁用）。按同一目标时间戳删除，存量孤儿数据一并清除。
+	// 与功能开关无关：管理员显式发起清理时，关闭开关只应停止记录，不该让存量大文本永远留下。
 	deletedRequestResponseCount := int64(0)
-	if common.RequestResponseLogEnabled {
+	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		for {
 			rowsAffected, err := model.DeleteOldRequestResponseLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
 			if err != nil {

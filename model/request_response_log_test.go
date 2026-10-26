@@ -141,3 +141,38 @@ func TestCleanupOldRequestResponseLogsDeletesInBatches(t *testing.T) {
 		require.NotNil(t, kept)
 	}
 }
+
+// TestCleanupRunsWhenFeatureDisabled 回归验证：保留期清理不受功能开关控制。
+// 历史实现在 cleanupRequestResponseLogs 开头检查 RequestResponseLogEnabled，
+// 关闭开关后清理一起停摆——线上因此出现开关关闭两周、1GB 存量数据一天未清的情况。
+func TestCleanupRunsWhenFeatureDisabled(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "rrl-cleanup-when-off.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+
+	previousDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = previousDB })
+	require.NoError(t, db.AutoMigrate(&RequestResponseLog{}))
+
+	const retentionDays = 3
+	cutoff := time.Now().Unix() - retentionDays*24*60*60
+	require.NoError(t, db.Create(&[]RequestResponseLog{
+		{RequestId: "rrl-off-expired", RequestBody: "old", CreatedAt: cutoff - 60},
+		{RequestId: "rrl-off-fresh", RequestBody: "new", CreatedAt: time.Now().Unix()},
+	}).Error)
+
+	previousEnabled := common.RequestResponseLogEnabled
+	common.RequestResponseLogEnabled = false
+	t.Cleanup(func() { common.RequestResponseLogEnabled = previousEnabled })
+
+	cleanupRequestResponseLogs(retentionDays)
+
+	var remainingExpired int64
+	require.NoError(t, db.Model(&RequestResponseLog{}).Where("request_id = ?", "rrl-off-expired").Count(&remainingExpired).Error)
+	assert.Zero(t, remainingExpired, "功能关闭时过期行也必须被清理")
+
+	kept, err := GetRequestResponseLogByRequestId("rrl-off-fresh")
+	require.NoError(t, err)
+	require.NotNil(t, kept, "保留期内的行不受影响")
+}

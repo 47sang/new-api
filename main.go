@@ -172,7 +172,8 @@ func main() {
 		common.SysLog(common.LogText("pprof enabled"))
 	}
 
-	// 定期清理过期的请求/响应日志（常驻：运行时开启开关后无需重启即可生效）
+	// 定期清理过期的请求/响应日志（常驻）。清理只受保留期控制，与功能开关无关：
+	// 关闭开关只停止记录，若同时停止清理，存量数据会永久堆积
 	if common.RequestResponseLogRetentionDays > 0 {
 		gopool.Go(func() {
 			model.StartRequestResponseLogCleanup(common.RequestResponseLogRetentionDays)

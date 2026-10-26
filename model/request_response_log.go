@@ -191,8 +191,12 @@ func StartRequestResponseLogCleanup(retentionDays int) {
 	}()
 }
 
+// cleanupRequestResponseLogs 删除过期请求/响应日志。
+// 保留期清理只受保留期控制，**不受功能开关控制**：关闭开关只是停止记录，
+// 若同时停止清理，存量数据会永久堆积（线上曾出现开关关闭两周、1GB 数据一天未清）。
+// ClickHouse 日志库没有迁移该表，直接跳过以免每次清理都报错。
 func cleanupRequestResponseLogs(retentionDays int) {
-	if !common.RequestResponseLogEnabled {
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return
 	}
 	deleted, err := CleanupOldRequestResponseLogs(retentionDays)

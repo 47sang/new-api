@@ -42,6 +42,7 @@ function Fixture() {
         <LogSettingsSection
           defaultValues={{
             LogConsumeEnabled: true,
+            RequestResponseLogEnabled: false,
             'log_setting.user_export_enabled': true,
             'log_setting.max_range_days': 30,
           }}
@@ -91,9 +92,14 @@ test('the page shows the five log modules in order, each with its own controls',
     'Reclaim database space',
   ])
   const recording = screen.getByRole('group', { name: 'Log recording' })
-  expect(within(recording).getAllByRole('switch')).toHaveLength(1)
+  expect(within(recording).getAllByRole('switch')).toHaveLength(2)
   expect(
     within(recording).getByRole('switch', { name: 'Record quota usage' })
+  ).toBeVisible()
+  expect(
+    within(recording).getByRole('switch', {
+      name: 'Record full request and response bodies',
+    })
   ).toBeVisible()
   const search = screen.getByRole('group', { name: 'Log search and export' })
   expect(
@@ -170,6 +176,24 @@ test('saving sends only the log export settings that changed', async () => {
   expect(api.put).toHaveBeenCalledWith('/api/option/', {
     key: 'log_setting.max_range_days',
     value: 90,
+  })
+})
+
+test('turning on the request/response log switch saves that option', async () => {
+  const user = userEvent.setup()
+  await renderSettings()
+  const toggle = screen.getByRole('switch', {
+    name: 'Record full request and response bodies',
+  })
+  expect(toggle).not.toBeChecked()
+
+  await user.click(toggle)
+  await user.click(screen.getByRole('button', { name: 'Save log settings' }))
+
+  await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1))
+  expect(api.put).toHaveBeenCalledWith('/api/option/', {
+    key: 'RequestResponseLogEnabled',
+    value: true,
   })
 })
 
