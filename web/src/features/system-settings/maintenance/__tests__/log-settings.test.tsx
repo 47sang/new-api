@@ -43,6 +43,7 @@ function Fixture() {
           defaultValues={{
             LogConsumeEnabled: true,
             RequestResponseLogEnabled: false,
+            RequestResponseLogRetentionDays: 3,
             'log_setting.user_export_enabled': true,
             'log_setting.max_range_days': 30,
           }}
@@ -101,6 +102,11 @@ test('the page shows the five log modules in order, each with its own controls',
       name: 'Record full request and response bodies',
     })
   ).toBeVisible()
+  expect(
+    within(recording).getByRole('spinbutton', {
+      name: 'Request/response log retention (days)',
+    })
+  ).toHaveValue(3)
   const search = screen.getByRole('group', { name: 'Log search and export' })
   expect(
     within(search).getByRole('switch', { name: 'Allow users to export logs' })
@@ -195,6 +201,37 @@ test('turning on the request/response log switch saves that option', async () =>
     key: 'RequestResponseLogEnabled',
     value: true,
   })
+})
+
+test('changing the request/response retention period saves that option', async () => {
+  const user = userEvent.setup()
+  await renderSettings()
+  const retention = screen.getByRole('spinbutton', {
+    name: 'Request/response log retention (days)',
+  })
+
+  fireEvent.change(retention, { target: { value: '14' } })
+  await user.click(screen.getByRole('button', { name: 'Save log settings' }))
+
+  await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1))
+  expect(api.put).toHaveBeenCalledWith('/api/option/', {
+    key: 'RequestResponseLogRetentionDays',
+    value: 14,
+  })
+})
+
+test('a negative retention period shows a field error and is not saved', async () => {
+  const user = userEvent.setup()
+  await renderSettings()
+  const retention = screen.getByRole('spinbutton', {
+    name: 'Request/response log retention (days)',
+  })
+
+  fireEvent.change(retention, { target: { value: '-1' } })
+  await user.click(screen.getByRole('button', { name: 'Save log settings' }))
+
+  await waitFor(() => expect(retention).toHaveAttribute('aria-invalid', 'true'))
+  expect(api.put).not.toHaveBeenCalled()
 })
 
 test('a time range under one day shows a field error and is not saved', async () => {

@@ -173,12 +173,12 @@ func main() {
 	}
 
 	// 定期清理过期的请求/响应日志（常驻）。清理只受保留期控制，与功能开关无关：
-	// 关闭开关只停止记录，若同时停止清理，存量数据会永久堆积
-	if common.RequestResponseLogRetentionDays > 0 {
-		gopool.Go(func() {
-			model.StartRequestResponseLogCleanup(common.RequestResponseLogRetentionDays)
-		})
-	}
+	// 关闭开关只停止记录，若同时停止清理，存量数据会永久堆积。
+	// 保留期为 0（永久保留）时由清理函数每轮自行跳过，因此这里无条件启动：
+	// 管理员随后在系统设置里改成有限天数即可开始清理，无需重启
+	gopool.Go(func() {
+		model.StartRequestResponseLogCleanup()
+	})
 
 	err = common.StartPyroScope()
 	if err != nil {

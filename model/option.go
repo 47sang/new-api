@@ -52,6 +52,7 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticEnableChannelEnabled"] = strconv.FormatBool(common.AutomaticEnableChannelEnabled)
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
 	common.OptionMap["RequestResponseLogEnabled"] = strconv.FormatBool(common.RequestResponseLogEnabled)
+	common.OptionMap["RequestResponseLogRetentionDays"] = strconv.Itoa(common.RequestResponseLogRetentionDays)
 	common.OptionMap["DisplayInCurrencyEnabled"] = strconv.FormatBool(common.DisplayInCurrencyEnabled)
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
@@ -269,6 +270,12 @@ func validateOptionValue(key string, value string) error {
 	if key == operation_setting.LogMaxRangeDaysOptionKey {
 		return operation_setting.ValidateLogMaxRangeDays(value)
 	}
+	if key == "RequestResponseLogRetentionDays" {
+		days, err := strconv.Atoi(value)
+		if err != nil || days < 0 {
+			return common.NewMessage("Request/response log retention days must be a non-negative integer, 0 means keep forever")
+		}
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
@@ -301,7 +308,15 @@ func UpdateOption(key string, value string) error {
 	// otherwise it will execute Update (with all fields).
 	DB.Save(&option)
 	// Update OptionMap
-	return updateOptionMap(key, value)
+	if err := updateOptionMap(key, value); err != nil {
+		return err
+	}
+	// 保留期改完后立即按新值清理一次，不用等最多 24 小时的下一个 tick。
+	// 启动时的选项加载走 loadOptionsFromDatabase，不经过本函数，不会重复触发
+	if key == "RequestResponseLogRetentionDays" {
+		TriggerRequestResponseLogCleanupAsync()
+	}
+	return nil
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
@@ -508,6 +523,12 @@ func updateOptionMap(key string, value string) (err error) {
 	case "SMTPPort":
 		intValue, _ := strconv.Atoi(value)
 		common.SMTPPort = intValue
+	case "RequestResponseLogRetentionDays":
+		intValue, _ := strconv.Atoi(value)
+		if intValue < 0 {
+			intValue = 0 // 负值按 0（永久保留）处理，与启动时语义一致
+		}
+		common.RequestResponseLogRetentionDays = intValue
 	case "SMTPAccount":
 		common.SMTPAccount = value
 	case "SMTPFrom":

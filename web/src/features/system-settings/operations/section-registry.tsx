@@ -107,6 +107,9 @@ const OPERATIONS_SECTIONS = [
           RequestResponseLogEnabled: Boolean(
             settings.RequestResponseLogEnabled
           ),
+          RequestResponseLogRetentionDays: Number(
+            settings.RequestResponseLogRetentionDays ?? 3
+          ),
           'log_setting.user_export_enabled':
             settings['log_setting.user_export_enabled'] ?? true,
           'log_setting.max_range_days':

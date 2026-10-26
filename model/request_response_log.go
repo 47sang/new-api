@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -170,34 +172,65 @@ func DeleteOldRequestResponseLogBatch(ctx context.Context, targetTimestamp int64
 }
 
 // StartRequestResponseLogCleanup 启动定期清理过期请求/响应日志的 goroutine（常驻）
-// retentionDays: 保留天数，0 表示永久保留（不清理）
-// 每次执行前检查功能开关：功能关闭时跳过，运行时开启后无需重启即可生效
-func StartRequestResponseLogCleanup(retentionDays int) {
-	if retentionDays <= 0 {
-		common.SysLog("request/response log cleanup disabled (retention days = 0)")
-		return
-	}
-
+// 保留期不通过参数传入，而是每轮现读 common.RequestResponseLogRetentionDays：
+// 管理员在系统设置里改保留期后，下一个 tick 即按新值生效，无需重启。
+// 保留期为 0（永久保留）时该轮跳过；从 0 改成有限天数同样无需重启即可开始清理。
+func StartRequestResponseLogCleanup() {
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 
 		// 启动后先清理一次
-		cleanupRequestResponseLogs(retentionDays)
+		cleanupRequestResponseLogs()
 
 		for range ticker.C {
-			cleanupRequestResponseLogs(retentionDays)
+			cleanupRequestResponseLogs()
 		}
 	}()
+}
+
+// cleanupMu 保证同一时刻只有一个清理在跑；cleanupPending 记录「清理期间又来了新触发」。
+// 只用 TryLock 会在清理在跑时悄悄丢弃触发——丢弃后新的保留期要等最多 24 小时的下一个
+// tick 才生效，因此跑完当前轮后必须补跑一次。
+var (
+	cleanupMu      sync.Mutex
+	cleanupPending atomic.Bool
+)
+
+// TriggerRequestResponseLogCleanupAsync 异步执行一次保留期清理，供管理员修改保留期后
+// 立即生效（否则要等最多 24 小时的下一个 tick）。已有清理在跑时登记待办，由那一轮
+// 跑完后补跑，不叠加也不丢弃。启动时的选项加载不走这条路，避免与启动清理重复。
+func TriggerRequestResponseLogCleanupAsync() {
+	if !cleanupMu.TryLock() {
+		cleanupPending.Store(true)
+		return
+	}
+	go runRequestResponseLogCleanup()
+}
+
+// runRequestResponseLogCleanup 执行清理；若执行期间又有新触发进来，按新触发再跑一轮
+func runRequestResponseLogCleanup() {
+	defer cleanupMu.Unlock()
+	for {
+		cleanupPending.Store(false)
+		cleanupRequestResponseLogs()
+		if !cleanupPending.Load() {
+			return
+		}
+	}
 }
 
 // cleanupRequestResponseLogs 删除过期请求/响应日志。
 // 保留期清理只受保留期控制，**不受功能开关控制**：关闭开关只是停止记录，
 // 若同时停止清理，存量数据会永久堆积（线上曾出现开关关闭两周、1GB 数据一天未清）。
 // ClickHouse 日志库没有迁移该表，直接跳过以免每次清理都报错。
-func cleanupRequestResponseLogs(retentionDays int) {
+func cleanupRequestResponseLogs() {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return
+	}
+	retentionDays := common.RequestResponseLogRetentionDays
+	if retentionDays <= 0 {
+		return // 0 = 永久保留
 	}
 	deleted, err := CleanupOldRequestResponseLogs(retentionDays)
 	if err != nil {

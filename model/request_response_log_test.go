@@ -166,7 +166,11 @@ func TestCleanupRunsWhenFeatureDisabled(t *testing.T) {
 	common.RequestResponseLogEnabled = false
 	t.Cleanup(func() { common.RequestResponseLogEnabled = previousEnabled })
 
-	cleanupRequestResponseLogs(retentionDays)
+	previousRetention := common.RequestResponseLogRetentionDays
+	common.RequestResponseLogRetentionDays = retentionDays
+	t.Cleanup(func() { common.RequestResponseLogRetentionDays = previousRetention })
+
+	cleanupRequestResponseLogs()
 
 	var remainingExpired int64
 	require.NoError(t, db.Model(&RequestResponseLog{}).Where("request_id = ?", "rrl-off-expired").Count(&remainingExpired).Error)
@@ -175,4 +179,113 @@ func TestCleanupRunsWhenFeatureDisabled(t *testing.T) {
 	kept, err := GetRequestResponseLogByRequestId("rrl-off-fresh")
 	require.NoError(t, err)
 	require.NotNil(t, kept, "保留期内的行不受影响")
+}
+
+// TestTriggerCleanupWhileRunningIsNotDropped 验证触发不重叠也不丢弃：
+// 清理正在跑时又来一次触发（管理员连续改保留期），触发只登记待办而不被悄悄丢掉，
+// 由在跑的那一轮跑完后补跑——丢掉的话新保留期要等最多 24 小时才生效
+func TestTriggerCleanupWhileRunningIsNotDropped(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "rrl-trigger-race.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+
+	previousDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = previousDB })
+	require.NoError(t, db.AutoMigrate(&RequestResponseLog{}))
+
+	previousRetention := common.RequestResponseLogRetentionDays
+	t.Cleanup(func() { common.RequestResponseLogRetentionDays = previousRetention })
+	common.RequestResponseLogRetentionDays = 1
+	require.False(t, cleanupPending.Load())
+
+	cutoff := time.Now().Unix() - 10*24*60*60
+	require.NoError(t, db.Create(&[]RequestResponseLog{
+		{RequestId: "rrl-race-1", RequestBody: "x", CreatedAt: cutoff},
+		{RequestId: "rrl-race-2", RequestBody: "x", CreatedAt: cutoff},
+	}).Error)
+
+	// 持锁模拟「清理正在跑」：此时的触发只登记待办，不丢也不叠加
+	require.True(t, cleanupMu.TryLock())
+	TriggerRequestResponseLogCleanupAsync()
+	require.True(t, cleanupPending.Load(), "清理在跑时触发必须登记待办")
+	cleanupMu.Unlock()
+
+	// 在跑的那一轮结束后补跑：重新触发即可拿到锁并驱动循环消费待办
+	TriggerRequestResponseLogCleanupAsync()
+	require.Eventually(t, func() bool {
+		var n int64
+		require.NoError(t, db.Model(&RequestResponseLog{}).Count(&n).Error)
+		return n == 0
+	}, 5*time.Second, 50*time.Millisecond, "清理在跑时的触发不能被丢弃")
+	require.False(t, cleanupPending.Load(), "补跑结束后待办必须清零")
+}
+
+// TestRequestResponseLogRetentionDaysOption 验证保留期走 Option 通道、实时生效：
+// 系统设置里改这个键时，运行时变量立即更新（下一个清理 tick 即按新值清理），
+// 且该键注册在 OptionMap 中，前端设置页才能拿到并回显当前值
+func TestRequestResponseLogRetentionDaysOption(t *testing.T) {
+	previous := common.RequestResponseLogRetentionDays
+	t.Cleanup(func() { common.RequestResponseLogRetentionDays = previous })
+	// updateOptionMap 会写 OptionMap；测试包里该 map 未初始化，按既有测试的做法自建后还原
+	previousMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() { common.OptionMap = previousMap })
+
+	require.NoError(t, updateOptionMap("RequestResponseLogRetentionDays", "7"))
+	assert.Equal(t, 7, common.RequestResponseLogRetentionDays)
+	assert.Equal(t, "7", common.OptionMap["RequestResponseLogRetentionDays"], "必须注册进 OptionMap 供前端读取")
+
+	// 负值按 0（永久保留）处理，与启动时语义一致
+	require.NoError(t, updateOptionMap("RequestResponseLogRetentionDays", "-1"))
+	assert.Equal(t, 0, common.RequestResponseLogRetentionDays)
+
+	// 非法值必须被校验挡住，不能把运行期变量改成脏值
+	require.Error(t, validateOptionValue("RequestResponseLogRetentionDays", "abc"))
+	require.Error(t, validateOptionValue("RequestResponseLogRetentionDays", "-3"))
+	require.NoError(t, validateOptionValue("RequestResponseLogRetentionDays", "0"))
+}
+
+// TestCleanupReadsRetentionEachRun 验证保留期实时生效：清理函数每轮现读
+// common.RequestResponseLogRetentionDays，管理员在前端改值后无需重启即按新值清理。
+// 0 表示永久保留，此时一行都不删。
+func TestCleanupReadsRetentionEachRun(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "rrl-retention-live.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+
+	previousDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = previousDB })
+	require.NoError(t, db.AutoMigrate(&RequestResponseLog{}))
+
+	previousRetention := common.RequestResponseLogRetentionDays
+	t.Cleanup(func() { common.RequestResponseLogRetentionDays = previousRetention })
+
+	cutoff := time.Now().Unix() - 10*24*60*60
+	require.NoError(t, db.Create(&[]RequestResponseLog{
+		{RequestId: "rrl-live-10d", RequestBody: "old", CreatedAt: cutoff},
+		{RequestId: "rrl-live-now", RequestBody: "new", CreatedAt: time.Now().Unix()},
+	}).Error)
+
+	// 保留期 30 天：10 天前的行还在保留期内，不删
+	common.RequestResponseLogRetentionDays = 30
+	cleanupRequestResponseLogs()
+	kept, err := GetRequestResponseLogByRequestId("rrl-live-10d")
+	require.NoError(t, err)
+	require.NotNil(t, kept, "保留期 30 天时 10 天前的行必须保留")
+
+	// 改成 5 天：同一轮数据、新保留期下应立即删除（无需重启）
+	common.RequestResponseLogRetentionDays = 5
+	cleanupRequestResponseLogs()
+	_, err = GetRequestResponseLogByRequestId("rrl-live-10d")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "保留期改为 5 天后 10 天前的行必须被清掉")
+
+	// 改成 0（永久保留）：不再删除任何行
+	require.NoError(t, db.Create(&RequestResponseLog{RequestId: "rrl-live-ancient", RequestBody: "x", CreatedAt: cutoff}).Error)
+	common.RequestResponseLogRetentionDays = 0
+	cleanupRequestResponseLogs()
+	kept, err = GetRequestResponseLogByRequestId("rrl-live-ancient")
+	require.NoError(t, err)
+	require.NotNil(t, kept, "保留期为 0 时任何行都不能被删")
 }

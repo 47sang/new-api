@@ -51,6 +51,7 @@ import { ServerLogFiles } from './server-log-files'
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
   RequestResponseLogEnabled: z.boolean(),
+  RequestResponseLogRetentionDays: z.number().int().min(0),
   log_setting: z.object({
     user_export_enabled: z.boolean(),
     max_range_days: z.number().int().min(1),
@@ -63,6 +64,7 @@ type LogSettingsSectionProps = {
   defaultValues: {
     LogConsumeEnabled: boolean
     RequestResponseLogEnabled: boolean
+    RequestResponseLogRetentionDays: number
     'log_setting.user_export_enabled': boolean
     'log_setting.max_range_days': number
   }
@@ -77,6 +79,8 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
     () => ({
       LogConsumeEnabled: props.defaultValues.LogConsumeEnabled,
       RequestResponseLogEnabled: props.defaultValues.RequestResponseLogEnabled,
+      RequestResponseLogRetentionDays:
+        props.defaultValues.RequestResponseLogRetentionDays,
       log_setting: {
         user_export_enabled:
           props.defaultValues['log_setting.user_export_enabled'],
@@ -98,6 +102,10 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
     const changes = [
       ['LogConsumeEnabled', values.LogConsumeEnabled],
       ['RequestResponseLogEnabled', values.RequestResponseLogEnabled],
+      [
+        'RequestResponseLogRetentionDays',
+        values.RequestResponseLogRetentionDays,
+      ],
       [
         'log_setting.user_export_enabled',
         values.log_setting.user_export_enabled,
@@ -173,6 +181,31 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
                   </FormControl>
                   <FormMessage />
                 </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='RequestResponseLogRetentionDays'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Request/response log retention (days)')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'How long recorded request and response bodies are kept before deletion. Applies as soon as you save. 0 keeps them forever.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
               )}
             />
           </div>
