@@ -556,5 +556,14 @@ export interface RequestResponseLog {
   is_completed: boolean
   response_size: number
   status_code: number
+  /** 会话标识：同一对话任务的每次请求相同，空串表示该请求未携带 */
+  session_id: string
   created_at: number
+}
+
+/** 同一会话的一轮请求（logs 表行），用于把一次对话任务的多次请求还原成完整对话线 */
+export interface SessionTurnsResponse {
+  session_id: string
+  total: number
+  turns: UsageLog[]
 }

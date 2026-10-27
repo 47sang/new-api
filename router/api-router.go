@@ -336,6 +336,11 @@ func SetApiRouter(router *gin.Engine) {
 		// 请求/响应日志详情
 		logRoute.GET("/:id/request-response", middleware.AdminAuth(), controller.GetRequestResponseByLogId)
 		logRoute.GET("/self/request-response", middleware.UserAuth(), controller.GetRequestResponseSelfRequestId)
+		// 同一会话的全部轮次（一次对话任务的多次请求）
+		logRoute.GET("/session", middleware.AdminAuth(), controller.GetRequestResponseSession)
+		logRoute.GET("/self/session", middleware.UserAuth(), controller.GetRequestResponseSession)
+		// 为上线前写入的历史行补填会话标识（管理员）
+		logRoute.POST("/request-response/backfill-session", middleware.AdminAuth(), controller.BackfillRequestResponseSession)
 
 		systemTaskRoute := apiRouter.Group("/system-task")
 		systemTaskRoute.Use(middleware.RootAuth())

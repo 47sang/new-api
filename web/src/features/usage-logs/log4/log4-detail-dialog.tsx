@@ -24,7 +24,7 @@ import { useQuery } from '@tanstack/react-query'
  * stored bodies. Admins fetch by log id; regular users go through the
  * request_id endpoint because the /self list only returns synthetic ids.
  */
-import { FileJson, MessageSquareText, Repeat } from 'lucide-react'
+import { FileJson, ListTree, MessageSquareText, Repeat } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -32,11 +32,13 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
   getSelfRequestResponseByRequestId,
   getRequestResponseByLogId,
+  getSessionTurns,
 } from '../api'
 import { JsonBlock } from '../components/json-block'
 import type { UsageLog } from '../data/schema'
@@ -56,6 +58,7 @@ import {
 const LOG4_TABS: Array<{ id: Log4DetailTab; labelKey: string }> = [
   { id: 'input', labelKey: 'Input' },
   { id: 'output', labelKey: 'Output' },
+  { id: 'session', labelKey: 'Session' },
   { id: 'raw', labelKey: 'Raw' },
 ]
 
@@ -152,7 +155,108 @@ function TabButton(props: {
 function TabIcon(props: { tab: Log4DetailTab }) {
   if (props.tab === 'input') return <MessageSquareText className='size-3.5' />
   if (props.tab === 'output') return <Repeat className='size-3.5' />
+  if (props.tab === 'session') return <ListTree className='size-3.5' />
   return <FileJson className='size-3.5' />
+}
+
+/**
+ * Session tab: every request of one conversation task, oldest first.
+ *
+ * One agent task issues many requests — the main loop plus parallel
+ * sub-agent branches — and the session id the client sends groups them.
+ * The first turn usually carries the full history (large prompt token
+ * count) while later turns are short branches, which is expected.
+ */
+function Log4SessionView(props: {
+  sessionId: string
+  isAdmin: boolean
+  currentRequestId: string
+  onSelectTurn: (turn: UsageLog) => void
+}) {
+  const { t } = useTranslation()
+  const query = useQuery({
+    queryKey: ['log4-session', props.isAdmin, props.sessionId],
+    queryFn: async () => {
+      const result = await getSessionTurns(props.sessionId, props.isAdmin)
+      if (!result.success) {
+        throw new Error(result.message || t('Failed to load session turns'))
+      }
+      return result.data
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  if (query.isLoading) {
+    return (
+      <div className='text-muted-foreground flex h-full items-center justify-center gap-2 text-sm'>
+        <Spinner className='size-4' />
+        {t('Loading...')}
+      </div>
+    )
+  }
+  if (query.isError) {
+    return (
+      <div className='flex h-full flex-col items-center justify-center gap-3'>
+        <span className='text-sm text-red-600 dark:text-red-400'>
+          {query.error instanceof Error
+            ? query.error.message
+            : t('Failed to load session turns')}
+        </span>
+        <Button variant='outline' size='sm' onClick={() => query.refetch()}>
+          {t('Retry')}
+        </Button>
+      </div>
+    )
+  }
+
+  const turns = query.data?.turns ?? []
+  if (turns.length === 0) {
+    return (
+      <div className='text-muted-foreground flex h-full items-center justify-center px-6 text-center text-sm'>
+        {t('No turns recorded for this session')}
+      </div>
+    )
+  }
+
+  return (
+    <div className='h-full min-h-0 space-y-2 overflow-y-auto pr-1'>
+      <p className='text-muted-foreground text-xs'>
+        {t('{{count}} requests in this session', { count: turns.length })}
+      </p>
+      <ul className='space-y-1'>
+        {turns.map((turn, index) => {
+          const current = turn.request_id === props.currentRequestId
+          return (
+            <li key={turn.request_id || turn.id}>
+              <button
+                type='button'
+                onClick={() => props.onSelectTurn(turn)}
+                aria-current={current ? 'true' : undefined}
+                className={cn(
+                  'hover:bg-muted flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors',
+                  current && 'bg-muted'
+                )}
+              >
+                <span className='text-muted-foreground w-8 shrink-0 font-mono text-xs'>
+                  #{index + 1}
+                </span>
+                <span className='w-32 shrink-0 font-mono text-xs'>
+                  {formatTimestampToDate(turn.created_at)}
+                </span>
+                <span className='min-w-0 flex-1 truncate'>
+                  {turn.model_name || '—'}
+                </span>
+                <span className='text-muted-foreground shrink-0 font-mono text-xs'>
+                  {(turn.prompt_tokens || 0).toLocaleString()} →{' '}
+                  {(turn.completion_tokens || 0).toLocaleString()}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
 }
 
 export interface Log4DetailDialogProps {
@@ -162,6 +266,8 @@ export interface Log4DetailDialogProps {
   onOpenChange: (open: boolean) => void
   /** Tab to show when a log is opened (row-click source column). */
   initialTab?: Log4DetailTab
+  /** Switch the dialog to another turn of the same conversation session. */
+  onSelectTurn?: (turn: UsageLog) => void
 }
 
 /**
@@ -227,6 +333,9 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
 
   const noRequestId = !props.isAdmin && requestId === ''
   const hasData = !!data
+  const hasSession = !!data?.session_id
+  // 打开的请求没有会话标识时不能停在 Session 标签上（该标签会被隐藏）
+  const effectiveTab = !hasSession && activeTab === 'session' ? 'input' : activeTab
 
   const renderTabContent = () => {
     if (noRequestId) {
@@ -265,7 +374,7 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
         </div>
       )
     }
-    if (activeTab === 'input') {
+    if (effectiveTab === 'input') {
       if (generationRequest) {
         return (
           <Log4GenerationView
@@ -293,13 +402,30 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
       }
       return <Log4RequestView request={chatRequest} log={log} other={other} />
     }
-    if (activeTab === 'output') {
+    if (effectiveTab === 'output') {
       return (
         <Log4ResponseView
           data={data}
           response={parsedResponse}
           log={log}
           other={other}
+        />
+      )
+    }
+    if (effectiveTab === 'session') {
+      if (!data.session_id) {
+        return (
+          <div className='text-muted-foreground flex h-full items-center justify-center px-6 text-center text-sm'>
+            {t('No session is associated with this request')}
+          </div>
+        )
+      }
+      return (
+        <Log4SessionView
+          sessionId={data.session_id}
+          isAdmin={props.isAdmin}
+          currentRequestId={data.request_id}
+          onSelectTurn={(turn) => props.onSelectTurn?.(turn)}
         />
       )
     }
@@ -342,10 +468,12 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
       <div className='flex h-full min-h-0 flex-col gap-2'>
         {hasData && !noRequestId && (
           <div className='flex shrink-0 items-center gap-1 border-b'>
-            {LOG4_TABS.map((tab) => (
+            {LOG4_TABS.filter(
+              (tab) => tab.id !== 'session' || !!data?.session_id
+            ).map((tab) => (
               <TabButton
                 key={tab.id}
-                active={activeTab === tab.id}
+                active={effectiveTab === tab.id}
                 icon={<TabIcon tab={tab.id} />}
                 label={t(tab.labelKey)}
                 onClick={() => setActiveTab(tab.id)}

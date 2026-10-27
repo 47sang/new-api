@@ -319,6 +319,10 @@ export function Log4Table(props: Log4TableProps) {
         onOpenChange={(open) => {
           if (!open) setDetailLog(null)
         }}
+        onSelectTurn={(turn) => {
+          setDetailLog(turn)
+          setDetailTab('input')
+        }}
       />
     </div>
   )

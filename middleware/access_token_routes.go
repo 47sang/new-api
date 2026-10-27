@@ -239,15 +239,20 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/log/self/stat":                    accessTokenScopeRule("usage:read"),
 	"GET /api/log/channel_affinity_usage_cache": accessTokenScopeRule("log:read"),
 	"GET /api/log/search":                       accessTokenScopeRule("log:read"),
+	"GET /api/log/session":                      accessTokenScopeRule("log:read"),
 	"GET /api/log/self":                         accessTokenScopeRule("usage:read"),
 	"GET /api/log/self/search":                  accessTokenScopeRule("usage:read"),
-	"GET /api/log/export":                       accessTokenScopeRule("log:read"),
-	"GET /api/log/self/export":                  accessTokenScopeRule("usage:read"),
-	"GET /api/data/":                            accessTokenScopeRule("log:read"),
-	"GET /api/data/users":                       accessTokenScopeRule("log:read"),
-	"GET /api/data/self":                        accessTokenScopeRule("usage:read"),
-	"GET /api/data/flow":                        accessTokenScopeRule("log:read"),
-	"GET /api/data/flow/self":                   accessTokenScopeRule("usage:read"),
+	"GET /api/log/self/session":                 accessTokenScopeRule("usage:read"),
+	// 回填是管理员维护动作，但 log 资源没有 write 动作（该资源只建模了查看），
+	// 因此按 log:read 声明；真正的管理员门槛由路由上的 AdminAuth 提供
+	"POST /api/log/request-response/backfill-session": accessTokenScopeRule("log:read"),
+	"GET /api/log/export":                             accessTokenScopeRule("log:read"),
+	"GET /api/log/self/export":                        accessTokenScopeRule("usage:read"),
+	"GET /api/data/":                                  accessTokenScopeRule("log:read"),
+	"GET /api/data/users":                             accessTokenScopeRule("log:read"),
+	"GET /api/data/self":                              accessTokenScopeRule("usage:read"),
+	"GET /api/data/flow":                              accessTokenScopeRule("log:read"),
+	"GET /api/data/flow/self":                         accessTokenScopeRule("usage:read"),
 
 	// router/api-router.go: /api/group, /api/prefill_group
 	"GET /api/group/":               accessTokenScopeRule("group:read"),

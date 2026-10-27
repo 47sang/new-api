@@ -137,6 +137,17 @@ func FormatRootLogs(logs []*Log) {
 	}
 }
 
+// FormatLogsForUser strips admin-only fields (channel name, admin_info) from logs
+// already scoped to a single user. Unlike formatUserLogs it keeps the real ids:
+// callers that navigate by id (会话轮次列表) need them, and the rows are
+// ownership-filtered before this runs.
+func FormatLogsForUser(logs []*Log) {
+	for i := range logs {
+		logs[i].ChannelName = ""
+		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityUser)
+	}
+}
+
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	order := "id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
@@ -155,6 +166,32 @@ func GetLogById(logId int) (*Log, error) {
 		return nil, err
 	}
 	return &log, nil
+}
+
+// GetLogsBySessionId 查询同一会话（request_response_logs.session_id）的全部轮次，
+// 按时间正序返回，用于把一次对话任务的多次请求还原成完整对话线。
+// userId > 0 时只返回该用户的轮次——普通用户的越权防护靠这层过滤：
+// 会话不属于他时结果为空，由调用方统一按 not found 处理，避免探测他人会话的存在性
+func GetLogsBySessionId(sessionId string, userId int, limit int) (logs []*Log, err error) {
+	if sessionId == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = sessionTurnQueryLimit
+	}
+	order := "created_at asc, id asc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("")
+	}
+	sessionRequestIds := LOG_DB.Model(&RequestResponseLog{}).
+		Select("request_id").
+		Where("session_id = ?", sessionId)
+	tx := LOG_DB.Where("request_id IN (?)", sessionRequestIds)
+	if userId > 0 {
+		tx = tx.Where("user_id = ?", userId)
+	}
+	err = tx.Order(order).Limit(limit).Find(&logs).Error
+	return logs, err
 }
 
 func RecordLog(userId int, logType int, content *common.Message) {

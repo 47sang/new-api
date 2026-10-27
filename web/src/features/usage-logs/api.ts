@@ -32,6 +32,7 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
   RequestResponseLog,
+  SessionTurnsResponse,
   TaskArtifactsResponse,
   UserInfo,
 } from './types'
@@ -237,6 +238,30 @@ export async function getSelfRequestResponseByRequestId(
   const res = await api.get('/api/log/self/request-response', {
     ...taskArtifactRequestConfig,
     params: { request_id: requestId },
+  })
+  return res.data
+}
+
+/**
+ * Fetch every turn of one conversation session.
+ *
+ * A single agent task issues many requests (main loop plus parallel
+ * sub-agents); the session id the client sends groups them into one line.
+ * The backend scopes the result to the current user for non-admins.
+ */
+export async function getSessionTurns(
+  sessionId: string,
+  isAdmin: boolean
+): Promise<{
+  success: boolean
+  message: string
+  data: SessionTurnsResponse | null
+}> {
+  // buildApiPath 已经为非管理员加上 /self 前缀，这里不能再拼一次
+  const path = `${buildApiPath('/api/log', isAdmin)}/session`
+  const res = await api.get(path, {
+    ...taskArtifactRequestConfig,
+    params: { session_id: sessionId },
   })
   return res.data
 }

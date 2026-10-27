@@ -158,7 +158,7 @@ export type Log4Page = {
 }
 
 /** Tabs of the Log4 row detail dialog. */
-export type Log4DetailTab = 'input' | 'output' | 'raw'
+export type Log4DetailTab = 'input' | 'output' | 'raw' | 'session'
 
 /**
  * Resolve the detail-dialog tab a row click should open: clicking the

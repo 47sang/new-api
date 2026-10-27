@@ -25,14 +25,18 @@ const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { QueryClient, QueryClientProvider } =
   await import('@tanstack/react-query')
 
-const { getRequestResponseByLogId, getSelfRequestResponseByRequestId } =
-  await import('../../api')
+const {
+  getRequestResponseByLogId,
+  getSelfRequestResponseByRequestId,
+  getSessionTurns,
+} = await import('../../api')
 const { Log4DetailDialog } = await import('../log4-detail-dialog')
 const { resolveDetailTab } = await import('../lib')
 
 vi.mock('../../api', () => ({
   getRequestResponseByLogId: vi.fn(),
   getSelfRequestResponseByRequestId: vi.fn(),
+  getSessionTurns: vi.fn(),
 }))
 
 vi.mock('@/lib/lobe-icon', () => ({
@@ -41,6 +45,7 @@ vi.mock('@/lib/lobe-icon', () => ({
 
 const mockedAdminFetch = vi.mocked(getRequestResponseByLogId)
 const mockedSelfFetch = vi.mocked(getSelfRequestResponseByRequestId)
+const mockedSessionFetch = vi.mocked(getSessionTurns)
 
 const i18n = createInstance()
 await i18n.use(initReactI18next).init({
@@ -104,7 +109,8 @@ function asResult(data: unknown) {
 function renderDialog(props: {
   log: Record<string, unknown> | null
   isAdmin: boolean
-  initialTab?: 'input' | 'output' | 'raw'
+  initialTab?: 'input' | 'output' | 'raw' | 'session'
+  onSelectTurn?: (turn: Record<string, unknown>) => void
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -118,6 +124,7 @@ function renderDialog(props: {
           open={props.log != null}
           initialTab={props.initialTab}
           onOpenChange={() => {}}
+          onSelectTurn={props.onSelectTurn as never}
         />
       </QueryClientProvider>
     </I18nextProvider>
@@ -127,6 +134,7 @@ function renderDialog(props: {
 beforeEach(() => {
   mockedAdminFetch.mockReset()
   mockedSelfFetch.mockReset()
+  mockedSessionFetch.mockReset()
 })
 
 afterEach(() => {
@@ -681,5 +689,131 @@ describe('Log4DetailDialog', () => {
       isAdmin: true,
     })
     await waitFor(() => expect(screen.getByText('Say hi')).toBeInTheDocument())
+  })
+
+  test('lists every turn of the session and switches to the clicked one', async () => {
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-turn-2',
+        request_body: OPENAI_REQUEST_BODY,
+        response_body: OPENAI_RESPONSE_BODY,
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        session_id: 'sess-1',
+        created_at: 1700000100,
+      })
+    )
+    mockedSessionFetch.mockResolvedValue(
+      asResult({
+        session_id: 'sess-1',
+        total: 2,
+        turns: [
+          buildLog({
+            id: 41,
+            request_id: 'req-turn-1',
+            model_name: 'gpt-4o',
+            created_at: 1700000000,
+            prompt_tokens: 173341,
+            completion_tokens: 1591,
+          }),
+          buildLog({
+            id: 42,
+            request_id: 'req-turn-2',
+            model_name: 'gpt-4o-mini',
+            created_at: 1700000100,
+            prompt_tokens: 2479,
+            completion_tokens: 523,
+          }),
+        ],
+      })
+    )
+
+    const onSelectTurn = vi.fn()
+    renderDialog({
+      log: buildLog({ id: 42, request_id: 'req-turn-2' }),
+      isAdmin: true,
+      initialTab: 'session',
+      onSelectTurn,
+    })
+
+    // 翻译资源为空时 i18next 用 key 当模板并插值，断言用插值后的文本
+    await waitFor(() =>
+      expect(screen.getByText('2 requests in this session')).toBeInTheDocument()
+    )
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument()
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('gpt-4o'))
+    expect(onSelectTurn).toHaveBeenCalledTimes(1)
+    expect(onSelectTurn.mock.calls[0][0]).toMatchObject({
+      request_id: 'req-turn-1',
+    })
+  })
+
+  test('queries the session through the self endpoint for non-admin viewers', async () => {
+    mockedSelfFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-turn-1',
+        request_body: OPENAI_REQUEST_BODY,
+        response_body: OPENAI_RESPONSE_BODY,
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        session_id: 'sess-self',
+        created_at: 1700000000,
+      })
+    )
+    mockedSessionFetch.mockResolvedValue(
+      asResult({
+        session_id: 'sess-self',
+        total: 1,
+        turns: [buildLog({ id: 42, request_id: 'req-turn-1' })],
+      })
+    )
+
+    renderDialog({
+      log: buildLog({ request_id: 'req-turn-1' }),
+      isAdmin: false,
+      initialTab: 'session',
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText('1 requests in this session')).toBeInTheDocument()
+    )
+    // buildApiPath 已为非管理员加 /self，不能再拼一次（曾拼成 /self/self/session）
+    expect(mockedSessionFetch).toHaveBeenCalledWith('sess-self', false)
+    expect(mockedAdminFetch).not.toHaveBeenCalled()
+  })
+
+  test('hides the session tab when the request carries no session id', async () => {
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-abc',
+        request_body: OPENAI_REQUEST_BODY,
+        response_body: OPENAI_RESPONSE_BODY,
+        is_stream: false,
+        is_completed: true,
+        response_size: 10,
+        status_code: 200,
+        session_id: '',
+        created_at: 1700000000,
+      })
+    )
+
+    renderDialog({ log: buildLog(), isAdmin: true, initialTab: 'session' })
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('What is the weather today?')
+      ).toBeInTheDocument()
+    )
+    expect(screen.queryByText('Session')).not.toBeInTheDocument()
+    expect(mockedSessionFetch).not.toHaveBeenCalled()
   })
 })

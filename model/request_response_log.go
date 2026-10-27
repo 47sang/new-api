@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -31,8 +32,48 @@ type RequestResponseLog struct {
 	// ResponseSize 响应体字节大小（流式为客户端实际收到的原始 SSE 报文大小），0 表示无响应体（二进制响应）
 	ResponseSize int `json:"response_size"`
 	// StatusCode HTTP 状态码，0 表示未设置
-	StatusCode int   `json:"status_code"`
-	CreatedAt  int64 `json:"created_at" gorm:"bigint;index"`
+	StatusCode int `json:"status_code"`
+	// SessionId 会话标识：同一对话任务（含子代理分支）的每次请求携带同一个值，
+	// 用于把分散的轮次还原成一整条对话线；空串表示该请求未携带会话标识
+	SessionId string `json:"session_id" gorm:"type:varchar(64);index;default:''"`
+	CreatedAt int64  `json:"created_at" gorm:"bigint;index"`
+}
+
+// sessionIdMaxLen 与 SessionId 列的 varchar(64) 对齐：超长的值直接丢弃，
+// 避免异常客户端把索引键撑到任意长度
+const sessionIdMaxLen = 64
+
+// claudeCodeSessionMeta 是 Claude Code 在 metadata.user_id 中携带的会话标识。
+// user_id 是"字符串里套 JSON"：{"device_id":"…","account_uuid":"","session_id":"<UUID>"}，
+// 因此必须先取出字符串再解析一次，不能按对象路径直接取 session_id
+type claudeCodeSessionMeta struct {
+	SessionId string `json:"session_id"`
+}
+
+// extractSessionId 从请求体提取会话标识。仅认 Claude Code 的结构化 metadata.user_id：
+// 取出的值形如 JSON 对象文本时才解析，普通字符串（客户端自填的 user_id）不作为
+// 会话标识——那标识的是终端用户而非对话，按它分组会把不同对话并成一条
+func extractSessionId(requestBody string) string {
+	if requestBody == "" {
+		return ""
+	}
+	raw := gjson.Get(requestBody, "metadata.user_id")
+	if !raw.Exists() {
+		return ""
+	}
+	value := strings.TrimSpace(raw.String())
+	if !strings.HasPrefix(value, "{") {
+		return ""
+	}
+	var meta claudeCodeSessionMeta
+	if err := common.UnmarshalJsonStr(value, &meta); err != nil {
+		return ""
+	}
+	meta.SessionId = strings.TrimSpace(meta.SessionId)
+	if meta.SessionId == "" || len(meta.SessionId) > sessionIdMaxLen {
+		return ""
+	}
+	return meta.SessionId
 }
 
 func (RequestResponseLog) TableName() string {
@@ -62,6 +103,7 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 		IsCompleted:  isCompleted,
 		ResponseSize: responseSize,
 		StatusCode:   statusCode,
+		SessionId:    extractSessionId(requestBody),
 		CreatedAt:    common.GetTimestamp(),
 	}
 
@@ -69,7 +111,7 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 		Columns: []clause.Column{{Name: "request_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"request_body", "response_body", "is_stream", "is_completed",
-			"response_size", "status_code", "created_at",
+			"response_size", "status_code", "session_id", "created_at",
 		}),
 	}).Create(log).Error; err != nil {
 		common.SysErrorThrottled("failed to save request/response log: " + err.Error())
@@ -106,6 +148,84 @@ func HasUserLogByRequestId(requestId string, userId int) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// sessionTurnQueryLimit 限制单次会话查询返回的轮次数：一条会话线可能包含数百次
+// 请求（含子代理分支），全部返回既无必要也会把响应体撑大
+const sessionTurnQueryLimit = 200
+
+// GetRequestResponseLogsBySessionId 查询同一会话的全部轮次，按时间正序返回。
+// 会话标识是客户端显式携带的，不需要推断；查不到就是空列表
+func GetRequestResponseLogsBySessionId(sessionId string) ([]*RequestResponseLog, error) {
+	if sessionId == "" {
+		return nil, nil
+	}
+	var logs []*RequestResponseLog
+	err := LOG_DB.Where("session_id = ?", sessionId).
+		Order("created_at asc, id asc").
+		Limit(sessionTurnQueryLimit).
+		Find(&logs).Error
+	if err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+// CountRequestResponseLogsMissingSessionId 统计尚未回填 session_id 的行数，
+// 供回填接口向管理员报告剩余工作量
+func CountRequestResponseLogsMissingSessionId() (int64, error) {
+	var count int64
+	err := LOG_DB.Model(&RequestResponseLog{}).
+		Where("session_id = '' OR session_id IS NULL").
+		Count(&count).Error
+	return count, err
+}
+
+// BackfillRequestResponseLogSessionIds 为功能上线前写入的历史行补填 session_id，
+// 返回 (扫描行数, 实际更新行数)。按主键游标分批推进，批内按 session_id 分组批量更新，
+// 避免逐行 UPDATE 在大表上形成大量小事务。
+// 请求体里没有会话标识的行保持空串，不会被反复选中（下次回填直接跳过）
+func BackfillRequestResponseLogSessionIds(batchSize int) (int64, int64, error) {
+	if batchSize <= 0 {
+		batchSize = 200
+	}
+	var scanned, updated int64
+	var lastId int64
+	for {
+		var rows []RequestResponseLog
+		if err := LOG_DB.Select("id", "request_body").
+			Where("(session_id = '' OR session_id IS NULL) AND id > ?", lastId).
+			Order("id asc").
+			Limit(batchSize).
+			Find(&rows).Error; err != nil {
+			return scanned, updated, err
+		}
+		if len(rows) == 0 {
+			return scanned, updated, nil
+		}
+
+		// 同一批里同一会话的多行合并成一次 UPDATE
+		idsBySession := make(map[string][]int64)
+		for i := range rows {
+			scanned++
+			lastId = rows[i].Id
+			if sessionId := extractSessionId(rows[i].RequestBody); sessionId != "" {
+				idsBySession[sessionId] = append(idsBySession[sessionId], rows[i].Id)
+			}
+		}
+		for sessionId, ids := range idsBySession {
+			if err := LOG_DB.Model(&RequestResponseLog{}).
+				Where("id IN ?", ids).
+				Update("session_id", sessionId).Error; err != nil {
+				return scanned, updated, err
+			}
+			updated += int64(len(ids))
+		}
+
+		if len(rows) < batchSize {
+			return scanned, updated, nil
+		}
+	}
 }
 
 // requestResponseLogCleanupBatchSize 限制保留期清理的单批删除行数。

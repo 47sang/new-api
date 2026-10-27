@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -49,6 +50,76 @@ func GetRequestResponseByLogId(c *gin.Context) {
 	}
 
 	common.ApiSuccess(c, reqRespLog)
+}
+
+// GetRequestResponseSession 查询同一会话的全部轮次，把一次对话任务的多次请求
+// 还原成完整对话线。会话标识由客户端显式携带（Claude Code 的 metadata.user_id.session_id），
+// 服务端不做推断。
+// 普通用户只能看自己的轮次：按 user_id 过滤后结果为空时统一返回 not found，
+// 避免通过不同错误消息探测他人会话的存在性
+func GetRequestResponseSession(c *gin.Context) {
+	sessionId := strings.TrimSpace(c.Query("session_id"))
+	if sessionId == "" {
+		common.ApiError(c, errors.New("session_id is required"))
+		return
+	}
+
+	isAdmin := c.GetInt("role") >= common.RoleAdminUser
+	userId := 0
+	if !isAdmin {
+		userId = c.GetInt("id")
+	}
+
+	logs, err := model.GetLogsBySessionId(sessionId, userId, 0)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(logs) == 0 {
+		common.ApiError(c, errors.New("session not found"))
+		return
+	}
+
+	if !isAdmin {
+		model.FormatLogsForUser(logs)
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"session_id": sessionId,
+		"total":      len(logs),
+		"turns":      logs,
+	})
+}
+
+// BackfillRequestResponseSession 为功能上线前写入的历史行补填 session_id（管理员）。
+// 分批推进并返回剩余量，管理员可重复调用直至 remaining 为 0
+func BackfillRequestResponseSession(c *gin.Context) {
+	batchSize := 200
+	if raw := strings.TrimSpace(c.Query("batch_size")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			common.ApiError(c, errors.New("invalid batch_size"))
+			return
+		}
+		batchSize = min(parsed, 1000)
+	}
+
+	scanned, updated, err := model.BackfillRequestResponseLogSessionIds(batchSize)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	remaining, err := model.CountRequestResponseLogsMissingSessionId()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"scanned":   scanned,
+		"updated":   updated,
+		"remaining": remaining,
+	})
 }
 
 // GetRequestResponseSelfRequestId 普通用户查看自己的请求/响应详情。
