@@ -95,6 +95,14 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 	requestBody = strings.ToValidUTF8(requestBody, "�")
 	responseBody = strings.ToValidUTF8(responseBody, "�")
 
+	// 大块 base64 抽成按内容寻址的载荷：agent 循环每轮重发同一张截图，
+	// 去重后只存一份（实测占请求体 39% 的字节）。抽取失败不阻塞落库
+	if extracted, extractErr := extractRequestBlobs(requestBody); extractErr != nil {
+		common.SysErrorThrottled("failed to extract request blobs: " + extractErr.Error())
+	} else {
+		requestBody = extracted
+	}
+
 	log := &RequestResponseLog{
 		RequestId:    requestId,
 		RequestBody:  requestBody,
@@ -118,7 +126,8 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 	}
 }
 
-// GetRequestResponseLogByRequestId 根据 request_id 查询请求/响应日志
+// GetRequestResponseLogByRequestId 根据 request_id 查询请求/响应日志。
+// 取出的大块 base64 载荷在此还原成原文；载荷已被保留期清理时保留占位符
 func GetRequestResponseLogByRequestId(requestId string) (*RequestResponseLog, error) {
 	if requestId == "" {
 		return nil, gorm.ErrRecordNotFound
@@ -128,6 +137,13 @@ func GetRequestResponseLogByRequestId(requestId string) (*RequestResponseLog, er
 	if err != nil {
 		return nil, err
 	}
+	restored, restoreErr := restoreRequestBlobs(log.RequestBody)
+	if restoreErr != nil {
+		// 还原失败也返回记录：占位符形态的内容仍好过整个详情打不开
+		common.SysErrorThrottled("failed to restore request blobs: " + restoreErr.Error())
+		return &log, nil
+	}
+	log.RequestBody = restored
 	return &log, nil
 }
 
@@ -357,5 +373,14 @@ func cleanupRequestResponseLogs() {
 		common.SysError("failed to cleanup request/response logs: " + err.Error())
 	} else if deleted > 0 {
 		common.SysLog("cleaned up " + strconv.FormatInt(deleted, 10) + " expired request/response log(s)")
+	}
+
+	// 载荷与请求/响应日志同一保留期。载荷的 created_at 在每次被引用时刷新，
+	// 因此它实际存活到「最近一次引用它的请求」过期，不会出现请求还在、载荷先没
+	deletedBlobs, blobErr := CleanupOldRequestResponseBlobs(retentionDays)
+	if blobErr != nil {
+		common.SysError("failed to cleanup request/response blobs: " + blobErr.Error())
+	} else if deletedBlobs > 0 {
+		common.SysLog("cleaned up " + strconv.FormatInt(deletedBlobs, 10) + " expired request/response blob(s)")
 	}
 }
