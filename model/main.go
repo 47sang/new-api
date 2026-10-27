@@ -355,6 +355,7 @@ func migrateDB() error {
 		&Log{},
 		&RequestResponseLog{},
 		&RequestResponseBlob{},
+		&RequestResponseChunk{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -423,6 +424,9 @@ func migrateLOGDB() error {
 		return err
 	}
 	if err := LOG_DB.AutoMigrate(&RequestResponseBlob{}); err != nil {
+		return err
+	}
+	if err := LOG_DB.AutoMigrate(&RequestResponseChunk{}); err != nil {
 		return err
 	}
 

@@ -20,11 +20,12 @@ import (
 type RequestResponseLog struct {
 	Id        int64  `json:"id" gorm:"primaryKey;autoIncrement;index"`
 	RequestId string `json:"request_id" gorm:"type:varchar(64);uniqueIndex;not null"`
-	// 大文本列不加 type 标签：GORM 在 MySQL 上映射为 LONGTEXT，PostgreSQL/SQLite 上映射为 TEXT
-	RequestBody string `json:"request_body"`
 	// 非流式响应：完整响应体；流式响应：分片合并后的单个最终响应对象（JSON），
 	// 未识别的流式格式保留原始 SSE 报文；二进制响应：留空
 	ResponseBody string `json:"response_body"`
+	// RequestBody 客户端原始请求体；大请求体会被抽离成大块 base64 载荷并按内容
+	// 定义分块去重，此时本列存的是分块索引（cdc1: 前缀），读取时还原
+	RequestBody string `json:"request_body"`
 	// IsStream 标记响应是否为流式（SSE）
 	IsStream bool `json:"is_stream"`
 	// IsCompleted 标记响应是否完整捕获（流式正常结束或非流式完整响应=true，客户端中断或二进制响应=false）
@@ -95,12 +96,24 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 	requestBody = strings.ToValidUTF8(requestBody, "�")
 	responseBody = strings.ToValidUTF8(responseBody, "�")
 
+	// 会话标识必须从客户端原文提取：下面两步会把请求体换成占位符和分块索引，
+	// 变了之后就再也取不出 metadata.user_id
+	sessionId := extractSessionId(requestBody)
+
 	// 大块 base64 抽成按内容寻址的载荷：agent 循环每轮重发同一张截图，
 	// 去重后只存一份（实测占请求体 39% 的字节）。抽取失败不阻塞落库
 	if extracted, extractErr := extractRequestBlobs(requestBody); extractErr != nil {
 		common.SysErrorThrottled("failed to extract request blobs: " + extractErr.Error())
 	} else {
 		requestBody = extracted
+	}
+
+	// 请求体按内容定义分块去重：一个对话任务每轮重发全量历史，
+	// 逐行压缩吃不到这份跨轮重复（实测仅 2.8x），分块去重后约 50x
+	if chunked, chunkErr := chunkRequestBody(requestBody); chunkErr != nil {
+		common.SysErrorThrottled("failed to chunk request body: " + chunkErr.Error())
+	} else {
+		requestBody = chunked
 	}
 
 	log := &RequestResponseLog{
@@ -111,7 +124,7 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 		IsCompleted:  isCompleted,
 		ResponseSize: responseSize,
 		StatusCode:   statusCode,
-		SessionId:    extractSessionId(requestBody),
+		SessionId:    sessionId,
 		CreatedAt:    common.GetTimestamp(),
 	}
 
@@ -127,7 +140,8 @@ func SaveRequestResponseLog(requestId string, requestBody string, responseBody s
 }
 
 // GetRequestResponseLogByRequestId 根据 request_id 查询请求/响应日志。
-// 取出的大块 base64 载荷在此还原成原文；载荷已被保留期清理时保留占位符
+// 取出的分块索引与大块 base64 占位符在此还原成原文；载荷或块已被保留期
+// 清理时保留占位符，部分内容好过让整个详情打不开
 func GetRequestResponseLogByRequestId(requestId string) (*RequestResponseLog, error) {
 	if requestId == "" {
 		return nil, gorm.ErrRecordNotFound
@@ -137,13 +151,23 @@ func GetRequestResponseLogByRequestId(requestId string) (*RequestResponseLog, er
 	if err != nil {
 		return nil, err
 	}
-	restored, restoreErr := restoreRequestBlobs(log.RequestBody)
-	if restoreErr != nil {
-		// 还原失败也返回记录：占位符形态的内容仍好过整个详情打不开
-		common.SysErrorThrottled("failed to restore request blobs: " + restoreErr.Error())
-		return &log, nil
+
+	// 先拼回分块，再还原 base64 占位符：落库时正是这个顺序抽离的
+	body := log.RequestBody
+	if isChunkedBody(body) {
+		restored, restoreErr := restoreChunkedBody(body)
+		if restoreErr != nil {
+			common.SysErrorThrottled("failed to restore request chunks: " + restoreErr.Error())
+		} else {
+			body = restored
+		}
 	}
-	log.RequestBody = restored
+	if restored, restoreErr := restoreRequestBlobs(body); restoreErr != nil {
+		common.SysErrorThrottled("failed to restore request blobs: " + restoreErr.Error())
+	} else {
+		body = restored
+	}
+	log.RequestBody = body
 	return &log, nil
 }
 
@@ -191,8 +215,10 @@ func GetRequestResponseLogsBySessionId(sessionId string) ([]*RequestResponseLog,
 // 供回填接口向管理员报告剩余工作量
 func CountRequestResponseLogsMissingSessionId() (int64, error) {
 	var count int64
+	// 排除分块索引行：这类请求体不再是 JSON，提取不出会话标识，
+	// 而它们在保存时已经提取过（没有就是客户端没带），不该被反复扫
 	err := LOG_DB.Model(&RequestResponseLog{}).
-		Where("session_id = '' OR session_id IS NULL").
+		Where("(session_id = '' OR session_id IS NULL) AND request_body NOT LIKE ?", chunkMarkerPrefix+"%").
 		Count(&count).Error
 	return count, err
 }
@@ -210,7 +236,7 @@ func BackfillRequestResponseLogSessionIds(batchSize int) (int64, int64, error) {
 	for {
 		var rows []RequestResponseLog
 		if err := LOG_DB.Select("id", "request_body").
-			Where("(session_id = '' OR session_id IS NULL) AND id > ?", lastId).
+			Where("(session_id = '' OR session_id IS NULL) AND id > ? AND request_body NOT LIKE ?", lastId, chunkMarkerPrefix+"%").
 			Order("id asc").
 			Limit(batchSize).
 			Find(&rows).Error; err != nil {
@@ -382,5 +408,12 @@ func cleanupRequestResponseLogs() {
 		common.SysError("failed to cleanup request/response blobs: " + blobErr.Error())
 	} else if deletedBlobs > 0 {
 		common.SysLog("cleaned up " + strconv.FormatInt(deletedBlobs, 10) + " expired request/response blob(s)")
+	}
+
+	deletedChunks, chunkErr := CleanupOldRequestResponseChunks(retentionDays)
+	if chunkErr != nil {
+		common.SysError("failed to cleanup request/response chunks: " + chunkErr.Error())
+	} else if deletedChunks > 0 {
+		common.SysLog("cleaned up " + strconv.FormatInt(deletedChunks, 10) + " expired request/response chunk(s)")
 	}
 }
