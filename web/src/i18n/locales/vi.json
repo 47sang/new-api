@@ -5354,6 +5354,7 @@
     "Request/response details for the removed entries will be deleted as well.": "Request/response details for the removed entries will be deleted as well.",
     "Request/response log retention (days)": "Thời gian lưu trữ nhật ký yêu cầu/phản hồi (ngày)",
     "Request/response log retention days must be a non-negative integer, 0 means keep forever": "Thời gian lưu trữ nhật ký yêu cầu/phản hồi phải là số nguyên không âm, 0 là lưu vĩnh viễn",
+    "Request/response recording is disabled. Enable it to view the input/output message details.": "Tính năng ghi nhận yêu cầu và phản hồi hiện đang tắt. Hãy bật tính năng này để xem chi tiết nội dung đầu vào/đầu ra.",
     "Requested items": "Số mục yêu cầu",
     "Requested quota": "Số tiền yêu cầu",
     "Requested quota: {{quota}}": "Số tiền yêu cầu: {{quota}}",

@@ -22,8 +22,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
-const { QueryClient, QueryClientProvider } =
-  await import('@tanstack/react-query')
+const { QueryClientProvider } = await import('@tanstack/react-query')
+const { createAppQueryClient } = await import('@/lib/query-client')
+const { toast } = await import('sonner')
 
 const {
   getRequestResponseByLogId,
@@ -106,15 +107,22 @@ function asResult(data: unknown) {
   return { success: true, message: '', data: data as never }
 }
 
+/** A failed business response; code mirrors the backend's stable error codes. */
+function asFailure(message: string, code?: string) {
+  return { success: false, message, data: null, code }
+}
+
+const DISABLED_RECORDING_MESSAGE =
+  'Request/response recording is disabled. Enable it to view the input/output message details.'
+
 function renderDialog(props: {
   log: Record<string, unknown> | null
   isAdmin: boolean
   initialTab?: 'input' | 'output' | 'raw' | 'session'
   onSelectTurn?: (turn: Record<string, unknown>) => void
 }) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const queryClient = createAppQueryClient()
+  queryClient.setDefaultOptions({ queries: { retry: false } })
   return render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
@@ -284,6 +292,69 @@ describe('Log4DetailDialog', () => {
       expect(screen.getByText('backend exploded')).toBeInTheDocument()
     )
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  test('shows a friendly hint instead of an error when recording is disabled', async () => {
+    const errorToast = vi.spyOn(toast, 'error')
+    mockedAdminFetch.mockResolvedValue(
+      asFailure(
+        DISABLED_RECORDING_MESSAGE,
+        'REQUEST_RESPONSE_RECORDING_DISABLED'
+      )
+    )
+    renderDialog({ log: buildLog({}), isAdmin: true })
+
+    await waitFor(() =>
+      expect(screen.getByText(DISABLED_RECORDING_MESSAGE)).toBeInTheDocument()
+    )
+    // The hint replaces the tabs; a failed fetch would keep the retry button.
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Raw' })).toBeNull()
+    // A disabled feature is a state, not a failure: no global error toast.
+    expect(errorToast).not.toHaveBeenCalled()
+  })
+
+  test('shows the disabled hint for non-admin viewers too', async () => {
+    mockedSelfFetch.mockResolvedValue(
+      asFailure(
+        DISABLED_RECORDING_MESSAGE,
+        'REQUEST_RESPONSE_RECORDING_DISABLED'
+      )
+    )
+    renderDialog({ log: buildLog({}), isAdmin: false })
+
+    await waitFor(() =>
+      expect(screen.getByText(DISABLED_RECORDING_MESSAGE)).toBeInTheDocument()
+    )
+    expect(mockedAdminFetch).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
+
+  test('explains a log without recorded content instead of erroring', async () => {
+    const errorToast = vi.spyOn(toast, 'error')
+    mockedAdminFetch.mockResolvedValue(asResult(null))
+    renderDialog({ log: buildLog({}), isAdmin: true })
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('No request/response content recorded for this log')
+      ).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(errorToast).not.toHaveBeenCalled()
+  })
+
+  test('keeps the error state for other failed fetches', async () => {
+    const errorToast = vi.spyOn(toast, 'error')
+    mockedAdminFetch.mockResolvedValue(asFailure('log not found'))
+    renderDialog({ log: buildLog({}), isAdmin: true })
+
+    await waitFor(() =>
+      expect(screen.getByText('log not found')).toBeInTheDocument()
+    )
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    // The dialog presents the failure itself, so the global toast stays quiet.
+    expect(errorToast).not.toHaveBeenCalled()
   })
 
   test('selects the matching message when a chart bar is clicked', async () => {
@@ -806,7 +877,7 @@ describe('Log4DetailDialog', () => {
       })
     )
 
-    renderDialog({ log: buildLog(), isAdmin: true, initialTab: 'session' })
+    renderDialog({ log: buildLog({}), isAdmin: true, initialTab: 'session' })
 
     await waitFor(() =>
       expect(

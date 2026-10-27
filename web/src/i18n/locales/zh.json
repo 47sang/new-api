@@ -5354,6 +5354,7 @@
     "Request/response details for the removed entries will be deleted as well.": "被移除日志对应的请求/响应详情也将一并删除。",
     "Request/response log retention (days)": "请求/响应日志保留期（天）",
     "Request/response log retention days must be a non-negative integer, 0 means keep forever": "请求/响应日志保留期必须是不小于 0 的整数，0 表示永久保留",
+    "Request/response recording is disabled. Enable it to view the input/output message details.": "请求/响应报文记录功能当前未开启，开启后可查看输入输出的报文详情",
     "Requested items": "请求项数",
     "Requested quota": "请求数额",
     "Requested quota: {{quota}}": "请求数额：{{quota}}",

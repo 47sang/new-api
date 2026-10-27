@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatTimestampToDate } from '@/lib/format'
+import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -61,6 +62,18 @@ const LOG4_TABS: Array<{ id: Log4DetailTab; labelKey: string }> = [
   { id: 'session', labelKey: 'Session' },
   { id: 'raw', labelKey: 'Raw' },
 ]
+
+/**
+ * Detail query outcome: the stored bodies, or the recording-disabled signal.
+ * A disabled feature is a state, not a failure, so it travels as data and
+ * never rejects the query — a rejection would also raise the global toast.
+ */
+type Log4DetailQueryData =
+  | { status: 'disabled' }
+  | { status: 'ready'; data: RequestResponseLog | null }
+
+const REQUEST_RESPONSE_RECORDING_DISABLED =
+  'REQUEST_RESPONSE_RECORDING_DISABLED'
 
 /** Raw tab: the stored request/response bodies as pretty-printed JSON. */
 function Log4RawView(props: { data: RequestResponseLog }) {
@@ -290,23 +303,35 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
   const enabled = props.open && !!log && (props.isAdmin || requestId !== '')
   const query = useQuery({
     queryKey: ['log4-request-response', props.isAdmin, log?.id ?? 0, requestId],
-    queryFn: async () => {
+    queryFn: async (): Promise<Log4DetailQueryData | null> => {
       if (!log) return null
       const result = props.isAdmin
         ? await getRequestResponseByLogId(log.id, true)
         : await getSelfRequestResponseByRequestId(requestId)
       if (!result.success) {
-        throw new Error(
-          result.message || t('Failed to load request/response data')
+        // Recording off is a state, not a failure: answer with the friendly
+        // hint instead of throwing (a throw would also raise the global
+        // error toast and a pointless retry button).
+        if (result.code === REQUEST_RESPONSE_RECORDING_DISABLED) {
+          return { status: 'disabled' }
+        }
+        throw createServerError(
+          result,
+          t('Failed to load request/response data')
         )
       }
-      return result.data
+      return { status: 'ready', data: result.data ?? null }
     },
     enabled,
     staleTime: 5 * 60_000,
+    // The dialog presents failures itself, so the automatic global error
+    // toast would only double up on the in-dialog error state.
+    meta: { errorToast: false },
   })
 
-  const data = query.data ?? null
+  const queryData = query.data ?? null
+  const recordingDisabled = queryData?.status === 'disabled'
+  const data = queryData?.status === 'ready' ? queryData.data : null
   const parsedRequest = useMemo(
     () => (data ? parseRequestBody(data.request_body) : null),
     [data]
@@ -364,6 +389,15 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
           <Button variant='outline' size='sm' onClick={() => query.refetch()}>
             {t('Retry')}
           </Button>
+        </div>
+      )
+    }
+    if (recordingDisabled) {
+      return (
+        <div className='text-muted-foreground flex h-full items-center justify-center px-6 text-center text-sm'>
+          {t(
+            'Request/response recording is disabled. Enable it to view the input/output message details.'
+          )}
         </div>
       )
     }
