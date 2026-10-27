@@ -5349,6 +5349,7 @@
     "Request/response details for the removed entries will be deleted as well.": "被移除日誌對應的請求/回應詳情也將一併刪除。",
     "Request/response log retention (days)": "請求/回應記錄保留期（天）",
     "Request/response log retention days must be a non-negative integer, 0 means keep forever": "請求/回應記錄保留期必須是不小於 0 的整數，0 表示永久保留",
+    "Request/response recording is disabled. Enable it to view the input/output message details.": "請求/回應記錄功能目前未開啟，開啟後可查看輸入/輸出的報文詳情",
     "Requested items": "請求項數",
     "Requested quota": "請求金額",
     "Requested quota: {{quota}}": "請求金額：{{quota}}",

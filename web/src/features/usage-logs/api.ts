@@ -214,7 +214,9 @@ export async function getRequestResponseByLogId(
 ): Promise<{
   success: boolean
   message: string
-  data: RequestResponseLog | null
+  data?: RequestResponseLog | null
+  /** Stable error code from the backend (e.g. REQUEST_RESPONSE_RECORDING_DISABLED). */
+  code?: string
 }> {
   const path = `${buildApiPath('/api/log', isAdmin)}/${logId}/request-response`
   const res = await api.get(path, taskArtifactRequestConfig)
@@ -232,7 +234,9 @@ export async function getSelfRequestResponseByRequestId(
 ): Promise<{
   success: boolean
   message: string
-  data: RequestResponseLog | null
+  data?: RequestResponseLog | null
+  /** Stable error code from the backend (e.g. REQUEST_RESPONSE_RECORDING_DISABLED). */
+  code?: string
 }> {
   const res = await api.get('/api/log/self/request-response', {
     ...taskArtifactRequestConfig,

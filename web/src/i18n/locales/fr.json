@@ -5349,6 +5349,7 @@
     "Request/response details for the removed entries will be deleted as well.": "Request/response details for the removed entries will be deleted as well.",
     "Request/response log retention (days)": "Durée de conservation des journaux requête/réponse (jours)",
     "Request/response log retention days must be a non-negative integer, 0 means keep forever": "La durée de conservation des journaux requête/réponse doit être un entier positif ou nul, 0 conserve indéfiniment",
+    "Request/response recording is disabled. Enable it to view the input/output message details.": "L'enregistrement des requêtes et des réponses est désactivé. Activez-le pour consulter les détails des messages d'entrée/sortie.",
     "Requested items": "Éléments demandés",
     "Requested quota": "Montant demandé",
     "Requested quota: {{quota}}": "Montant demandé : {{quota}}",

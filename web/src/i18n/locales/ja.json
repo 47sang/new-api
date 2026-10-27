@@ -5349,6 +5349,7 @@
     "Request/response details for the removed entries will be deleted as well.": "Request/response details for the removed entries will be deleted as well.",
     "Request/response log retention (days)": "リクエスト/レスポンスログの保持期間（日）",
     "Request/response log retention days must be a non-negative integer, 0 means keep forever": "リクエスト/レスポンスログの保持期間は 0 以上の整数で指定してください。0 は永久保持です",
+    "Request/response recording is disabled. Enable it to view the input/output message details.": "リクエスト/レスポンスの記録は無効です。有効にすると、入力/出力のメッセージの詳細を表示できます。",
     "Requested items": "リクエスト件数",
     "Requested quota": "リクエスト額",
     "Requested quota: {{quota}}": "リクエスト額：{{quota}}",

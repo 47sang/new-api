@@ -2,12 +2,14 @@ package controller
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // GetRequestResponseByLogId 根据日志 ID 获取请求/响应详情
@@ -42,13 +44,7 @@ func GetRequestResponseByLogId(c *gin.Context) {
 	}
 
 	// 从新表获取请求/响应数据
-	reqRespLog, reqErr := model.GetRequestResponseLogByRequestId(log.RequestId)
-	if reqErr != nil {
-		common.ApiError(c, errors.New("request/response log not found"))
-		return
-	}
-
-	common.ApiSuccess(c, reqRespLog)
+	respondRequestResponseLog(c, log.RequestId)
 }
 
 // GetRequestResponseSelfRequestId 普通用户查看自己的请求/响应详情。
@@ -73,11 +69,26 @@ func GetRequestResponseSelfRequestId(c *gin.Context) {
 		return
 	}
 
-	reqRespLog, reqErr := model.GetRequestResponseLogByRequestId(requestId)
-	if reqErr != nil {
-		common.ApiError(c, errors.New("request/response log not found"))
-		return
-	}
+	respondRequestResponseLog(c, requestId)
+}
 
-	common.ApiSuccess(c, reqRespLog)
+// respondRequestResponseLog 查询并返回 request_id 对应的请求/响应记录。
+// 查询不到不是错误：保留期清理掉、ClickHouse 日志库未迁移该表、开关关闭时未记录，
+// 都是合法答案；存量记录即使开关已关闭仍可查看，因此查询必须先于开关判定。
+func respondRequestResponseLog(c *gin.Context, requestId string) {
+	reqRespLog, reqErr := model.GetRequestResponseLogByRequestId(requestId)
+	switch {
+	case reqErr == nil:
+		common.ApiSuccess(c, reqRespLog)
+	case !common.RequestResponseLogEnabled || common.UsingLogDatabase(common.DatabaseTypeClickHouse):
+		// 功能关闭（含 ClickHouse 日志库没有该表）时任何查询失败都按「未开启」作答，
+		// 不透出底层库错误；稳定 code 让前端展示友好提示而不是报错。
+		common.ApiErrorStatus(c, http.StatusOK,
+			common.NewMessage("Request/response recording is disabled. Enable it to view the input/output message details."),
+			gin.H{"code": "REQUEST_RESPONSE_RECORDING_DISABLED"})
+	case errors.Is(reqErr, gorm.ErrRecordNotFound):
+		common.ApiSuccess(c, nil)
+	default:
+		common.ApiErrorT(c, "Failed to load request/response data")
+	}
 }

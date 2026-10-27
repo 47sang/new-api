@@ -218,6 +218,17 @@ LOG_DB.Clauses(clauses.OnConflict{
 - 管理员：1. 从 `logs` 表按 `id` 获取日志记录（`model.GetLogById`），提取 `request_id`；2. 从 `request_response_logs` 表按 `request_id` 查询完整数据并返回
 - 普通用户：1. 携带列表行中的真实 `request_id`（用户侧日志列表返回的 `id` 是合成展示 ID，不能作为查询键）；2. 后端通过 `logs` 表 `(request_id, user_id)` 校验归属（`model.HasUserLogByRequestId`），未通过统一返回 not found 防探测；3. 按 `request_id` 查询完整数据并返回
 
+响应契约（两个端点一致，`respondRequestResponseLog`；**查询先于开关判定**，存量记录不受开关影响）：
+
+| 查询结果 | 响应 |
+|---|---|
+| 查到记录 | `success: true` + 完整记录 |
+| 查不到记录且功能关闭（或 ClickHouse 日志库无该表） | `success: false` + `code: REQUEST_RESPONSE_RECORDING_DISABLED` + `message_key`；前端展示「功能未开启」友好提示，不透出底层库错误 |
+| 查不到记录且功能开启 | `success: true` + `data: null` |
+| 其他数据库错误 | `success: false` + `message_key: Failed to load request/response data` |
+
+「查询不到不是错误」：保留期清理掉、ClickHouse 日志库未迁移该表、开关关闭时未记录，都是合法答案。
+
 ## 4. 配置项
 
 | 配置 | 环境变量 | 默认值 | 说明 |
@@ -254,6 +265,8 @@ LOG_DB.Clauses(clauses.OnConflict{
 **⚠️ 单库部署**：`LOG_SQL_DSN` 未配置时 `InitLogDB` 提前返回、不会调用 `migrateLOGDB()`，因此 `migrateDB()`（主库迁移）的 AutoMigrate 列表中也必须包含 `&RequestResponseLog{}`。
 
 GORM 的 `AutoMigrate` 会自动创建 `request_response_logs` 表（如果不存在），并对已有表添加缺失的列/索引。
+
+**⚠️ 已知限制（2026-10-27 登记，未处理）**：`model/option.go` 的 `RequestResponseLogEnabled` 选项更新没有 ClickHouse 护栏，管理员可在 ClickHouse 日志库部署上通过 Option API 把开关打开（启动时的强制禁用只在 `migrateLOGDB` 执行一次）。此时查看端点按 disabled 作答、不暴露库错误，但中继侧每个请求会有一次向不存在表的写入，被 `SysErrorThrottled` 节流后仍会产生系统日志噪声。
 
 ## 8. 依赖关系
 
