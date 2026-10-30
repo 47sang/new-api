@@ -39,7 +39,7 @@ export interface InflightRecord {
 /** SSE 一帧快照（对应后端 service/inflight.Snapshot） */
 export interface InflightSnapshot {
   inflight: InflightRecord[]
-  /** 模型 -> 观测到的最大同时在途数（只增不减） */
+  /** 模型 -> 并发上限估计（观测到的最大并发，撞上游 429 时收紧，只紧不放） */
   peaks: Record<string, number>
   total_inflight: number
   total_estimated_prompt_tokens: number
@@ -50,7 +50,7 @@ export interface InflightModelGroup {
   model: string
   /** 当前在途数 */
   current: number
-  /** 峰值：观测到的最大并发，撞上游 429 时也会抬升 */
+  /** 并发上限估计：观测到的最大并发，撞上游 429 时收紧 */
   peak: number
   records: InflightRecord[]
 }

@@ -66,11 +66,17 @@ func Summary() (inflight int, estimatedTokens int)
   临界区只做 O(1) 的 map 读写，relay 主链路无可感知影响。
 - 容量有界：在途数超过 `maxTrackedInflight`（默认 5000）时不再登记新请求（返回的 `Record` 仍可被
   `MarkActive` / `Finish` 安全调用，只是不入表），防止异常路径下内存无上限增长。
-- **峰值规则**：`MarkActive` 与 `Begin` 时用「该模型当前在途数」刷新峰值取 max；
-  `Finish` 里若 `apiErr` 非空且 `StatusCode == http.StatusTooManyRequests`，再用一次当时在途数取 max
-  （此时记录仍在表中，计数含本次请求）。只增不减，无重置入口，重启归零。
+- **峰值规则**：`Begin` 时用「该模型当前在途数」刷新峰值；`Finish` 里若 `apiErr` 非空且
+  `StatusCode == http.StatusTooManyRequests`，再用「当时仍在被上游服务的请求数」**收紧**一次
+  （记录仍在表中，在途数含本次请求，故减一）。收紧是单向的：`min(当前值, 在途数-1)`，结果不低于 1。
+  被 429 拒掉的请求从 `Begin` 到 `Finish` 一直计在途数，所以只看「最大在途数」会被这些注定被拒的
+  请求一路抬高并永久停住（上游上限 8、第 9 条起被拒，却显示 `(8-12)`）；429 恰好证伪了那个水位，
+  应当把上限压回真正在跑的条数。`Finish` 先校验记录仍在表中才收紧——超出 `maxTrackedInflight`
+  未登记的记录没有对应的在途数可减。
 - **429 归属**：网关自身的限流在中间件层就挡掉了，根本进不到 `Relay()`，因此 `Relay()` 里见到的
-  429 必然是上游 / 渠道返回的，无需额外区分。
+  429 必然是上游 / 渠道返回的，无需额外区分。注意 429 也可能是限速（每分钟请求数）而非并发上限，
+  这种 429 同样会把估计压低；`peaks` 只用于 SSE 快照下发、不参与任何限流决策，下一次并发涨上来
+  估计即自行恢复。
 - 空实现安全：`rec == nil` 时所有函数直接返回，钩子无需判空。
 
 **`stream.go`** — SSE 端点
@@ -86,8 +92,8 @@ func Stream(c *gin.Context)
 - `select` 监听 `c.Request.Context().Done()`，客户端断开即退出，不泄漏 goroutine。
 - 路由**不加** `CriticalRateLimit`：长连接 + 自动重连会被计数型限流误伤。
 
-**`registry_test.go`** — 表驱动用例：Begin/MarkActive/Finish 生命周期、峰值只增不减、
-上游 429 抬升而非 429 状态码不抬升、容量上限、nil 安全、并发下计数自洽。
+**`registry_test.go`** — 表驱动用例：Begin/MarkActive/Finish 生命周期、峰值随在途数抬升、
+上游 429 收紧而非 429 状态码不收紧、429 后上限可恢复、容量上限、nil 安全、并发下计数自洽。
 
 ### B. 后端既有文件的最小钩子
 
@@ -152,8 +158,8 @@ sequenceDiagram
 ### 后端
 
 1. **注册表语义（第 11、15、16 条）**——`registry_test.go` 表驱动：Begin 后为排队、MarkActive 后为
-   活跃、Finish 后注销；峰值随在途数只增不减；上游 429 用当时在途数抬升，非 429 不抬升；nil 记录
-   安全；超过容量上限不入表。
+   活跃、Finish 后注销；峰值随在途数抬升；上游 429 用「仍在被服务的请求数」收紧，非 429 不收紧；
+   收紧后跑出更高并发上限重新抬升；nil 记录安全；超过容量上限不入表。
 2. **接口契约（第 4、5、9 条）**——`controller` 层用 `httptest` 打 `/api/inflight/stream`：断言响应头
    为 `text/event-stream`、首帧含 `event: snapshot`、非管理员 401。断流与重连属客户端行为，由前端
    测试覆盖。
@@ -174,7 +180,8 @@ sequenceDiagram
 ### 手动验证
 
 7. `bun run dev` + 本地后端，管理员登录 `/dashboard/usage`：用压测工具打几个并发请求，确认面板实时
-   出现分节表格、时长走动、请求结束后行消失；人为让上游返回 429，确认对应模型峰值被抬升；
+   出现分节表格、时长走动、请求结束后行消失；人为让上游返回 429，确认对应模型上限被收紧到当时仍在
+   被服务的条数（例如 8 条在跑、第 9 条起被拒，徽标从 `(9-9)` 回到 `(8-8)` 并停住）；
    杀后台进程确认显示「连接中…」并自动恢复；再点「手动连接」确认不等退避立即恢复，且不需要刷新页面。
 8. `bun run typecheck`、涉及文件 `oxlint`、`bun run test`（dashboard 用例）；
    `bun run i18n:sync` 后 `git diff --stat` 只有预期文件。

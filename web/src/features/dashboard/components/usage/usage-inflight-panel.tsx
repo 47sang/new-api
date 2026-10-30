@@ -44,7 +44,7 @@ interface UsageInflightPanelProps {
 
 /**
  * 实时在途请求面板：SSE 推送，按模型分节展示 `(当前在途 - 峰值)` 与每条在途请求。
- * 峰值由后端维护（观测到的最大并发，撞上游 429 时抬升），只增不减、重启归零。
+ * 峰值是后端维护的并发上限估计：观测到的最大并发，撞上游 429 时收紧，只紧不放、重启归零。
  */
 export function UsageInflightPanel(props: UsageInflightPanelProps) {
   const { t } = useTranslation()

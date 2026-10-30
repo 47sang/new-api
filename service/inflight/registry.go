@@ -53,7 +53,8 @@ const maxTrackedInflight = 5000
 type registry struct {
 	mu       sync.RWMutex
 	inflight map[string]*Record
-	// counts 维护每个模型当前在途数，peaks 维护每个模型观测到的最大在途数（只增不减）。
+	// counts 维护每个模型当前在途数，peaks 维护每个模型的并发上限估计：
+	// 取观测到的最大并发，撞上游 429 时收紧（只紧不放）。
 	counts map[string]int
 	peaks  map[string]int
 }
@@ -113,7 +114,7 @@ func MarkActive(record *Record, c *gin.Context, info *relaycommon.RelayInfo) {
 	}
 }
 
-// Finish 注销一条在途请求，并在收到上游 429 时抬升该模型的峰值。
+// Finish 注销一条在途请求，并在收到上游 429 时收紧该模型的并发上限。
 // apiErr 指向 relay 的错误变量：网关自身的限流在中间件层就挡下了，根本进不到 relay，
 // 因此这里见到的 429 必然是上游 / 渠道返回的，无需再区分来源。
 func Finish(record *Record, apiErr **types.NewAPIError) {
@@ -122,13 +123,15 @@ func Finish(record *Record, apiErr **types.NewAPIError) {
 	}
 	defaultRegistry.mu.Lock()
 	defer defaultRegistry.mu.Unlock()
-	// 先抬升峰值再注销：此刻记录仍在表中，计数含本次请求，
-	// 才是「撞 429 当时压在网关上的请求数」。
-	if isUpstreamTooManyRequests(apiErr) {
-		defaultRegistry.raisePeakLocked(record.Model)
-	}
+	// 未登记的记录（超出容量上限被丢弃的那类）不在在途表里，没有可引用的并发现场，
+	// 既不该抬峰也不该收紧，直接放过。
 	if _, ok := defaultRegistry.inflight[record.Id]; !ok {
 		return
+	}
+	// 先收紧上限再注销：此刻记录仍在表中，在途数含本次请求，
+	// 减一才是「撞 429 当时仍在被上游服务的请求数」。
+	if isUpstreamTooManyRequests(apiErr) {
+		defaultRegistry.tightenPeakLocked(record.Model)
 	}
 	delete(defaultRegistry.inflight, record.Id)
 	if count := defaultRegistry.counts[record.Model]; count > 1 {
@@ -172,13 +175,17 @@ func (r *registry) addLocked(model string) {
 	}
 }
 
-// raisePeakLocked 用该模型当前在途数刷新峰值，只增不减。
-func (r *registry) raisePeakLocked(model string) {
+// tightenPeakLocked 用「撞 429 时仍在被上游服务的请求数」收紧该模型的并发上限。
+// 被 429 拒掉的这条本身不占上游并发，故在途数减一；结果不低于 1——单条请求被拒时
+// 并没有「并发被打满」的证据，保留 1 只是不让该模型那一节从面板上消失。
+// 上限只紧不放：被 429 证伪的水位会被淘汰，但已经取到的更紧上界不会被虚高的在途数顶掉。
+func (r *registry) tightenPeakLocked(model string) {
 	if model == "" {
 		return
 	}
-	if r.counts[model] > r.peaks[model] {
-		r.peaks[model] = r.counts[model]
+	served := max(r.counts[model]-1, 1)
+	if served < r.peaks[model] {
+		r.peaks[model] = served
 	}
 }
 
