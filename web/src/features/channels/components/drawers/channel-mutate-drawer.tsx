@@ -148,6 +148,7 @@ import {
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_WARNINGS,
+  CHANNEL_TYPE_XAI_SUB,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
   FIELD_DESCRIPTIONS,
@@ -241,6 +242,7 @@ import {
   ChannelConfigurationStatusIndicator,
 } from './channel-configuration'
 import { ChannelProviderPicker } from './channel-provider-picker'
+import { XaiSubscriptionAuth } from './xai-subscription-auth'
 import {
   ChannelApiAccessSection,
   ChannelAuthSection,
@@ -4429,6 +4431,16 @@ export function ChannelMutateDrawer({
                 control={form.control}
                 name='key'
                 render={({ field }) => {
+                  // xAI 订阅：密钥区换成设备码登录面板（主路径不手填 Key）
+                  if (currentType === CHANNEL_TYPE_XAI_SUB) {
+                    return (
+                      <XaiSubscriptionAuth
+                        value={field.value ?? ''}
+                        onChange={(key) => field.onChange(key)}
+                        disabled={sensitiveLocked}
+                      />
+                    )
+                  }
                   let keyPlaceholder = t(getKeyPromptForType(currentType))
                   if (isEditing) {
                     keyPlaceholder = t('Leave empty to keep existing key')

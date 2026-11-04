@@ -126,6 +126,8 @@ func XaiRefreshToken(ctx context.Context, refreshToken string) (*XaiOAuthKey, er
     `verification_uri` + `expires_in`（**不含 device_code**）。
   - `GET /api/channel/xai_subscription/status?session_id=` — 界面轮询：等待中（带剩余秒数）/
     成功（返回 OAuth JSON 与邮箱）/ 失败（类别 + 错误码）。
+  - `GET /api/channel/xai_subscription/current` — 全局同时只允许一次登录，据此返回进行中的那次；
+    界面刷新页面 / 重开抽屉后靠它**恢复短码与验证网址**（PRODUCT 第 10 条）。没有则为空。
   - `POST /api/channel/xai_subscription/cancel?session_id=`。
   - `POST /api/channel/{id}/xai_subscription/refresh` — 手动刷新凭证，镜像
     `controller/channel.go:668` 的 codex 刷新端点。
@@ -141,13 +143,17 @@ func XaiRefreshToken(ctx context.Context, refreshToken string) (*XaiOAuthKey, er
 
 ### F. 前端
 
-- `constants.ts`：`CHANNEL_TYPES`、`CHANNEL_PROVIDER_PRESENTATION`（描述）、
-  `CHANNEL_TYPE_DISPLAY_ORDER`、`TYPE_TO_KEY_PROMPT`、两个 passthrough 集合各加一行（57 号在列，
-  新类型同样需要字段直通）。
-- `channel-mutate-drawer.tsx`：选中新类型时，密钥区替换为三块——「登录 xAI 账号」主按钮；
-  登录中面板（短码大号等宽、验证网址、倒计时、「复制短码并打开验证页」、取消）；
-  「手动粘贴 OAuth JSON」折叠后备入口。轮询 status 接口（2 秒），成功后把返回的 JSON 写进表单
-  key 字段并触发拉取模型。
+- `constants.ts`：`CHANNEL_TYPES`（标签）、`CHANNEL_PROVIDER_PRESENTATION`（描述）、
+  `CHANNEL_TYPE_DISPLAY_ORDER`（跟在 57 号订阅类之后）、导出 `CHANNEL_TYPE_XAI_SUB`。
+  **不**加进 `FIELD_PASSTHROUGH_TYPES` / `OPENAI_FIELD_PASSTHROUGH_TYPES` / `TYPE_TO_KEY_PROMPT`：
+  48 号 xai 本身就不在这些集合里（同一上游、同一协议面），且订阅类型的密钥区整块被登录面板替换，
+  密钥提示不会出现。
+- 新组件 `components/drawers/xai-subscription-auth.tsx`：登录按钮与风险说明、登录中面板
+  （短码大号等宽、验证网址、倒计时、「复制短码并打开验证页」、取消）、失败文案与重试、
+  已登录态（账号 + 退出）、「手动粘贴 OAuth JSON」折叠后备入口。轮询 status（2 秒一轮），
+  成功后把返回的 JSON 写进表单 key 字段。
+- `channel-mutate-drawer.tsx` 只加两处：导入新组件与 `CHANNEL_TYPE_XAI_SUB`；在密钥
+  `FormField` 的 render 开头按类型早返回新组件（外围结构一行不动，把 5216 行文件的冲突面压到最小）。
 - 风险说明文案（黄色警示区）按 PRODUCT 第 6 条前置。
 - i18n：`web/src/i18n/locales/` 七种语言补齐；**不要跑 `bun run format`**（会重写全仓文件）。
 

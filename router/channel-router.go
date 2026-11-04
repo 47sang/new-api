@@ -86,6 +86,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodPost, path: "/:id/codex/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshCodexChannelCredential},
 	{method: http.MethodPost, path: "/xai_subscription/start", permission: authz.ChannelSensitiveWrite, handler: controller.StartXaiSubscriptionLogin},
 	{method: http.MethodGet, path: "/xai_subscription/status", permission: authz.ChannelSensitiveWrite, handler: controller.GetXaiSubscriptionLoginStatus},
+	{method: http.MethodGet, path: "/xai_subscription/current", permission: authz.ChannelSensitiveWrite, handler: controller.GetXaiCurrentSubscriptionLogin},
 	{method: http.MethodPost, path: "/xai_subscription/cancel", permission: authz.ChannelSensitiveWrite, handler: controller.CancelXaiSubscriptionLogin},
 	{method: http.MethodPost, path: "/:id/xai_subscription/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshXaiSubscriptionCredential},
 	{method: http.MethodGet, path: "/:id/codex/usage", permission: authz.ChannelRead, handler: controller.GetCodexChannelUsage},

@@ -720,3 +720,97 @@ export async function getPrefillGroups(
   const res = await api.get('/api/prefill_group', { params: { type } })
   return res.data
 }
+
+// ============================================================================
+// xAI Subscription (Device Code Login)
+// ============================================================================
+
+export type XaiSubscriptionStartResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    session_id: string
+    user_code: string
+    verification_uri: string
+    expires_in: number
+  }
+}
+
+/** status: pending 等待确认 / success 登录成功 / failed 失败（reason 给界面说人话）。 */
+export type XaiSubscriptionStatusResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    status: 'pending' | 'success' | 'failed'
+    remain_sec?: number
+    key?: string
+    email?: string
+    reason?: string
+    code?: string
+  }
+}
+
+export type XaiSubscriptionRefreshResponse = CodexCredentialRefreshResponse
+
+/** 开始一次设备码登录，返回给界面看的短码与验证网址。 */
+export async function startXaiSubscriptionLogin(): Promise<XaiSubscriptionStartResponse> {
+  const res = await api.post(
+    '/api/channel/xai_subscription/start',
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/** 轮询登录进度。 */
+export async function getXaiSubscriptionLoginStatus(
+  sessionId: string
+): Promise<XaiSubscriptionStatusResponse> {
+  const res = await api.get('/api/channel/xai_subscription/status', {
+    params: { session_id: sessionId },
+    ...channelActionConfig({ disableDuplicate: true }),
+  })
+  return res.data
+}
+
+/** 放弃一次登录。 */
+export async function cancelXaiSubscriptionLogin(
+  sessionId: string
+): Promise<{ success: boolean }> {
+  const res = await api.post(
+    '/api/channel/xai_subscription/cancel',
+    {},
+    { params: { session_id: sessionId }, ...channelActionConfig() }
+  )
+  return res.data
+}
+
+/** 手动刷新一个订阅渠道的凭证。 */
+export async function refreshXaiSubscriptionCredential(
+  channelId: number
+): Promise<XaiSubscriptionRefreshResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/xai_subscription/refresh`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/** 查当前进行中的登录，供界面重开后恢复短码与验证网址。 */
+export async function getXaiCurrentSubscriptionLogin(): Promise<{
+  success: boolean
+  data?: {
+    active: boolean
+    session_id?: string
+    user_code?: string
+    verification_uri?: string
+    remain_sec?: number
+  }
+}> {
+  const res = await api.get(
+    '/api/channel/xai_subscription/current',
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}

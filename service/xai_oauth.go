@@ -597,6 +597,35 @@ func XaiCancelDeviceLogin(sessionID string) {
 	xaiDropSession(sessionID)
 }
 
+// XaiCurrentDeviceLogin 当前还在进行中的登录（全局同时只允许一次，见产品规格第 13 条）。
+// 界面重开抽屉、刷新页面后靠它恢复显示短码与验证网址，不丢进度。
+func XaiCurrentDeviceLogin() (*XaiDeviceChallenge, string, bool) {
+	xaiLoginMu.Lock()
+	defer xaiLoginMu.Unlock()
+	now := time.Now()
+	var current *xaiLoginSession
+	for _, s := range xaiLoginSessions {
+		if s.expiresAt.Before(now) {
+			continue
+		}
+		if current == nil || s.expiresAt.Before(current.expiresAt) {
+			current = s
+		}
+	}
+	if current == nil {
+		return nil, "", false
+	}
+	remain := int64(time.Until(current.expiresAt).Seconds())
+	if remain < 0 {
+		remain = 0
+	}
+	return &XaiDeviceChallenge{
+		UserCode:        current.userCode,
+		VerificationURI: current.verifyURI,
+		ExpiresInSec:    remain,
+	}, current.id, true
+}
+
 // XaiRefreshToken 用刷新令牌换一组新的。终局错误返回 ErrXaiRefreshTerminal。
 func XaiRefreshToken(ctx context.Context, key *XaiOAuthKey) (*XaiOAuthKey, error) {
 	return defaultXaiOAuthClient().refresh(ctx, key)

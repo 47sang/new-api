@@ -87,6 +87,30 @@ func CancelXaiSubscriptionLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// GetXaiCurrentSubscriptionLogin 查当前进行中的登录，供界面重开后恢复进度。
+func GetXaiCurrentSubscriptionLogin(c *gin.Context) {
+	challenge, sessionID, active := service.XaiCurrentDeviceLogin()
+	if !active {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    gin.H{"active": false},
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"active":           true,
+			"session_id":       sessionID,
+			"user_code":        challenge.UserCode,
+			"verification_uri": challenge.VerificationURI,
+			"remain_sec":       challenge.ExpiresInSec,
+		},
+	})
+}
+
 // RefreshXaiSubscriptionCredential 手动刷新一个订阅渠道的凭证。
 func RefreshXaiSubscriptionCredential(c *gin.Context) {
 	channelID, err := strconv.Atoi(c.Param("id"))
