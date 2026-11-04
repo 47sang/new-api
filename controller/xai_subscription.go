@@ -87,6 +87,73 @@ func CancelXaiSubscriptionLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// SignOutXaiSubscription 退出登录：只清这台网关上的令牌，渠道与模型保留。
+// 走显式的单列更新——UpdateChannel 对空 key 会因零值被 GORM 忽略，清不掉。
+func SignOutXaiSubscription(c *gin.Context) {
+	channelID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	ch, err := model.GetChannelById(channelID, true)
+	if err != nil || ch == nil {
+		common.ApiErrorT(c, "Channel not found")
+		return
+	}
+	if ch.Type != constant.ChannelTypeXaiSub {
+		common.ApiErrorMsg(c, "channel is not an xAI subscription channel")
+		return
+	}
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", ch.Id).Update("key", "").Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+// GetXaiSubscriptionChannelStatus 读一个订阅渠道的登录态。加载渠道详情时后端不返回 key
+// （Omit("key")），编辑表单靠这个接口判断「已登录」，不回传令牌本身。
+func GetXaiSubscriptionChannelStatus(c *gin.Context) {
+	channelID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	ch, err := model.GetChannelById(channelID, true)
+	if err != nil || ch == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    gin.H{"signed_in": false},
+		})
+		return
+	}
+	if ch.Type != constant.ChannelTypeXaiSub {
+		common.ApiErrorMsg(c, "channel is not an xAI subscription channel")
+		return
+	}
+	key, parseErr := service.ParseXaiOAuthKey(strings.TrimSpace(ch.Key))
+	if parseErr != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    gin.H{"signed_in": false},
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"signed_in":   true,
+			"email":       key.Email,
+			"expires_at":  key.ExpiresAt,
+			"refreshable": strings.TrimSpace(key.RefreshToken) != "",
+		},
+	})
+}
+
 // GetXaiCurrentSubscriptionLogin 查当前进行中的登录，供界面重开后恢复进度。
 func GetXaiCurrentSubscriptionLogin(c *gin.Context) {
 	challenge, sessionID, active := service.XaiCurrentDeviceLogin()

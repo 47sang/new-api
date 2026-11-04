@@ -4437,6 +4437,7 @@ export function ChannelMutateDrawer({
                       <XaiSubscriptionAuth
                         value={field.value ?? ''}
                         onChange={(key) => field.onChange(key)}
+                        channelId={channelId}
                         disabled={sensitiveLocked}
                       />
                     )

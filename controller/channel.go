@@ -1504,7 +1504,8 @@ func FetchModels(c *gin.Context) {
 		}
 
 		key := strings.TrimSpace(req.Key)
-		if req.Type != constant.ChannelTypeCodex {
+		// 订阅类渠道的 key 是 OAuth JSON，可能带换行，不能按行截断
+		if req.Type != constant.ChannelTypeCodex && req.Type != constant.ChannelTypeXaiSub {
 			key = strings.Split(key, "\n")[0]
 		}
 		channel = &model.Channel{

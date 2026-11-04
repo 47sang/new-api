@@ -134,6 +134,10 @@ func XaiRefreshToken(ctx context.Context, refreshToken string) (*XaiOAuthKey, er
   - 全部管理员鉴权；响应里不出现令牌；错误只回类别与错误码。
 - `controller/channel.go` 校验分支加一个 case：新类型的 key 必须是 JSON 且含 `access_token`；
   缺 `refresh_token` 不阻断保存（PRODUCT 第 5 条）。
+- 列模型：`fetchChannelUpstreamModelIDs` 里为新类型把 OAuth JSON 换成访问令牌后走通用路径
+  （渠道基址 `https://api.x.ai` 拼出来正是 xAI 的 `/v1/models`），镜像 codex 的特判位置；
+  否则会把整段 JSON 当 Bearer 发出去。`FetchModels` 的按行截断也要排除该类型（JSON 可能带换行）。
+- 前端 `MODEL_FETCHABLE_TYPES` 加入新类型，否则「获取模型」按钮不出现。
 - `controller/channel-test.go:50` 与 `:670` 的 codex 特判**改为按类型集合判断**
   （`isResponsesOnlyChannelType`），把 codex 与新类型一起纳入，避免散着加 case。
 - **定价落实**（PRODUCT 第 29 条）：登录成功、模型列表拉回后，把该批模型以 0 倍率补进定价配置

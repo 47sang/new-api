@@ -34,7 +34,9 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   cancelXaiSubscriptionLogin,
   getXaiCurrentSubscriptionLogin,
+  getXaiSubscriptionChannelStatus,
   getXaiSubscriptionLoginStatus,
+  signOutXaiSubscription,
   startXaiSubscriptionLogin,
 } from '../../api'
 
@@ -46,6 +48,8 @@ type XaiSubscriptionAuthProps = {
   /** 表单 key 字段的当前值（订阅会话 JSON）。 */
   value: string
   onChange: (value: string) => void
+  /** 编辑中的渠道 id：加载详情时后端不返回 key，靠它查是否已登录。 */
+  channelId?: number | null
   disabled?: boolean
 }
 
@@ -75,6 +79,7 @@ function hasAccessToken(raw: string): boolean {
 export function XaiSubscriptionAuth({
   value,
   onChange,
+  channelId,
   disabled = false,
 }: XaiSubscriptionAuthProps) {
   const { t } = useTranslation()
@@ -88,10 +93,11 @@ export function XaiSubscriptionAuth({
   )
   const [copied, setCopied] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
+  const [savedEmail, setSavedEmail] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const signedIn = hasAccessToken(value)
-  const email = readEmail(value)
+  const signedIn = hasAccessToken(value) || savedEmail !== ''
+  const email = signedIn ? readEmail(value) || savedEmail : ''
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -139,6 +145,26 @@ export function XaiSubscriptionAuth({
     },
     [pollOnce, stopPolling]
   )
+
+  // 编辑已有渠道时后端不返回 key，用只读状态接口判断「已登录」
+  useEffect(() => {
+    if (!channelId || hasAccessToken(value)) return
+    let alive = true
+    void (async () => {
+      try {
+        const res = await getXaiSubscriptionChannelStatus(channelId)
+        if (!alive) return
+        setSavedEmail(res.data?.signed_in ? (res.data.email ?? '') : '')
+      } catch {
+        // 查不到就按未登录展示，管理员可以重新发起登录
+      }
+    })()
+    return () => {
+      alive = false
+    }
+    // 只在挂载时查一次：登录成功后表单里就有值了，不需要再查
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId])
 
   // 挂载时恢复进行中的登录：刷新页面、重开抽屉都不丢进度
   useEffect(() => {
@@ -200,6 +226,19 @@ export function XaiSubscriptionAuth({
     setPhase('idle')
   }, [sessionId, stopPolling])
 
+  const handleSignOut = useCallback(async () => {
+    if (channelId) {
+      try {
+        await signOutXaiSubscription(channelId)
+      } catch {
+        // 后端清理失败时仍然清掉表单值，保存时不把凭证带回去
+      }
+    }
+    setSavedEmail('')
+    setManualOpen(false)
+    onChange('')
+  }, [channelId, onChange])
+
   const handleCopyAndReopen = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(userCode)
@@ -229,10 +268,7 @@ export function XaiSubscriptionAuth({
             variant='outline'
             size='sm'
             disabled={disabled}
-            onClick={() => {
-              onChange('')
-              setManualOpen(false)
-            }}
+            onClick={() => void handleSignOut()}
           >
             <LogOut className='mr-2 h-4 w-4' />
             {t('Sign out')}

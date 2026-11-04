@@ -408,6 +408,18 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return service.FetchCodexChannelModels(channel)
 	}
 
+	// xAI 订阅：key 是 OAuth 会话 JSON，取出访问令牌后走通用路径
+	// （渠道基址 https://api.x.ai，拼出来正是 xAI 的 /v1/models）
+	if channel.Type == constant.ChannelTypeXaiSub {
+		oauthKey, err := service.ParseXaiOAuthKey(strings.TrimSpace(channel.Key))
+		if err != nil {
+			return nil, err
+		}
+		withToken := *channel
+		withToken.Key = strings.TrimSpace(oauthKey.AccessToken)
+		channel = &withToken
+	}
+
 	var url string
 	switch channel.Type {
 	case constant.ChannelTypeAli:

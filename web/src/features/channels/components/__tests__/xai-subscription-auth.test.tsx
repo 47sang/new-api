@@ -33,6 +33,7 @@ function mockApi(handlers: {
   status?: () => unknown
   current?: () => unknown
   cancel?: () => unknown
+  channelStatus?: () => unknown
 }) {
   vi.spyOn(api, 'post').mockImplementation(async (url: string) => {
     if (url.includes('/xai_subscription/start')) {
@@ -41,9 +42,18 @@ function mockApi(handlers: {
     if (url.includes('/xai_subscription/cancel')) {
       return { data: handlers.cancel?.() ?? { success: true } } as never
     }
+    if (url.includes('/xai_subscription/signout')) {
+      return { data: { success: true } } as never
+    }
     return { data: {} } as never
   })
   vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+    // 带渠道 id 的状态接口（编辑态查询）要先于登录轮询的 status 判断
+    if (/\/channel\/\d+\/xai_subscription\/status/.test(url)) {
+      return {
+        data: handlers.channelStatus?.() ?? { signed_in: false },
+      } as never
+    }
     if (url.includes('/xai_subscription/status')) {
       return { data: handlers.status?.() ?? {} } as never
     }
@@ -54,10 +64,18 @@ function mockApi(handlers: {
   })
 }
 
-function renderAuth(value = '', onChange = vi.fn()) {
+function renderAuth(
+  value = '',
+  onChange = vi.fn(),
+  channelId: number | null = null
+) {
   const user = userEvent.setup()
   const view = render(
-    <XaiSubscriptionAuth value={value} onChange={onChange} />
+    <XaiSubscriptionAuth
+      value={value}
+      onChange={onChange}
+      channelId={channelId}
+    />
   )
   return { user, onChange, ...view }
 }
@@ -176,6 +194,43 @@ describe('XaiSubscriptionAuth', () => {
     ).toBeInTheDocument()
 
     await user.click(screen.getByText('Sign out'))
+    expect(onChange).toHaveBeenCalledWith('')
+  })
+
+  test('编辑已有渠道时经状态接口恢复「已登录」态', async () => {
+    mockApi({
+      channelStatus: () => ({
+        success: true,
+        data: {
+          signed_in: true,
+          email: 'grok@example.com',
+          refreshable: true,
+        },
+      }),
+    })
+    renderAuth('', vi.fn(), 18)
+    expect(
+      await screen.findByText('Signed in with xAI subscription')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Signed in as grok@example\.com/)
+    ).toBeInTheDocument()
+  })
+
+  test('退出登录走后端端点并清表单', async () => {
+    mockApi({
+      channelStatus: () => ({
+        success: true,
+        data: { signed_in: true, email: 'grok@example.com', refreshable: true },
+      }),
+    })
+    const { user, onChange } = renderAuth('', vi.fn(), 18)
+    await user.click(await screen.findByText('Sign out'))
+    expect(api.post).toHaveBeenCalledWith(
+      expect.stringContaining('/xai_subscription/signout'),
+      {},
+      expect.anything()
+    )
     expect(onChange).toHaveBeenCalledWith('')
   })
 

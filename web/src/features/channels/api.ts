@@ -814,3 +814,32 @@ export async function getXaiCurrentSubscriptionLogin(): Promise<{
   )
   return res.data
 }
+
+/** 读一个订阅渠道的登录态（编辑表单加载时后端不返回 key，靠它判断是否已登录）。 */
+export async function getXaiSubscriptionChannelStatus(channelId: number): Promise<{
+  success: boolean
+  data?: {
+    signed_in: boolean
+    email?: string
+    expires_at?: string
+    refreshable?: boolean
+  }
+}> {
+  const res = await api.get(
+    `/api/channel/${channelId}/xai_subscription/status`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+/** 退出订阅登录：只清这台网关上的令牌，渠道与模型保留。 */
+export async function signOutXaiSubscription(
+  channelId: number
+): Promise<{ success: boolean }> {
+  const res = await api.post(
+    `/api/channel/${channelId}/xai_subscription/signout`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
