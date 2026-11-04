@@ -661,6 +661,20 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	// xAI 订阅：密钥只能是订阅登录拿到的 OAuth JSON。access_token 必须有；
+	// refresh_token 缺了只是不能自动续期（界面会提示），不阻断保存。
+	if channel.Type == constant.ChannelTypeXaiSub {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if isAdd || trimmedKey != "" {
+			if !strings.HasPrefix(trimmedKey, "{") {
+				return fmt.Errorf("xAI subscription key must be a valid JSON object")
+			}
+			if _, err := service.ParseXaiOAuthKey(trimmedKey); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -845,6 +859,8 @@ func AddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// xAI 订阅渠道：模型补为 0 价，用量走订阅、不向下游收费（不覆盖已调过的价）
+	EnsureXaiSubscriptionModelsFree(channels)
 	createAudit := map[string]any{
 		"name":  addChannelRequest.Channel.Name,
 		"type":  addChannelRequest.Channel.Type,
@@ -1260,6 +1276,8 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// xAI 订阅渠道：新模型补为 0 价，用量走订阅、不向下游收费（不覆盖已调过的价）
+	EnsureXaiSubscriptionModelsFree([]model.Channel{channel.Channel})
 	model.InitChannelCache()
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)

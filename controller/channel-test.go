@@ -42,12 +42,26 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+// isResponsesOnlyChannel 只服务 Responses 一族的订阅类渠道：测试时端点规范化为
+// Responses，且自动测试走流式（与订阅客户端行为一致）。
+func isResponsesOnlyChannel(channel *model.Channel) bool {
+	if channel == nil {
+		return false
+	}
+	switch channel.Type {
+	case constant.ChannelTypeCodex, constant.ChannelTypeXaiSub:
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
 		return normalized
 	}
-	if channel != nil && channel.Type == constant.ChannelTypeCodex {
+	if isResponsesOnlyChannel(channel) {
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
 	return normalized
@@ -667,7 +681,7 @@ func validateTestResponseBody(respBody []byte, isStream bool) error {
 }
 
 func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
-	return channel != nil && channel.Type == constant.ChannelTypeCodex
+	return isResponsesOnlyChannel(channel)
 }
 
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
