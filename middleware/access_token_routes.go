@@ -174,14 +174,16 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/ratio_sync/channels":              accessTokenScopeRule("option:read"),
 	"POST /api/ratio_sync/fetch":                accessTokenScopeRule("option:write"),
 
-	// router/api-router.go: /api/performance, /api/system-task, /api/system-info
+	// router/api-router.go: /api/performance, /api/inflight, /api/system-task, /api/system-info
 	"GET /api/performance/stats":                   accessTokenScopeRule("ops:read"),
 	"DELETE /api/performance/disk_cache":           accessTokenScopeRule("ops:write"),
 	"POST /api/performance/reset_stats":            accessTokenScopeRule("ops:write"),
 	"POST /api/performance/gc":                     accessTokenScopeRule("ops:write"),
 	"GET /api/performance/logs":                    accessTokenScopeRule("ops:read"),
 	"DELETE /api/performance/logs":                 accessTokenScopeRule("ops:write"),
+	"GET /api/inflight/stream":                     accessTokenScopeRule("ops:read"),
 	"POST /api/system-task/log-cleanup":            accessTokenScopeRule("ops:write"),
+	"POST /api/system-task/log-vacuum":             accessTokenScopeRule("ops:write"),
 	"GET /api/system-task/list":                    accessTokenScopeRule("ops:read"),
 	"DELETE /api/system-task/history":              accessTokenScopeRule("ops:write"),
 	"GET /api/system-task/current":                 accessTokenScopeRule("ops:read"),
@@ -244,6 +246,10 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/log/self":                         accessTokenScopeRule("usage:read"),
 	"GET /api/log/self/search":                  accessTokenScopeRule("usage:read"),
 	"GET /api/log/self/session":                 accessTokenScopeRule("usage:read"),
+	"GET /api/log/models":                       accessTokenScopeRule("log:read"),
+	"GET /api/log/self/models":                  accessTokenScopeRule("usage:read"),
+	"GET /api/log/:id/request-response":         accessTokenScopeRule("log:read"),
+	"GET /api/log/self/request-response":        accessTokenScopeRule("usage:read"),
 	// 回填是管理员维护动作，但 log 资源没有 write 动作（该资源只建模了查看），
 	// 因此按 log:read 声明；真正的管理员门槛由路由上的 AdminAuth 提供
 	"POST /api/log/request-response/backfill-session": accessTokenScopeRule("log:read"),
@@ -251,6 +257,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/log/self/export":                        accessTokenScopeRule("usage:read"),
 	"GET /api/data/":                                  accessTokenScopeRule("log:read"),
 	"GET /api/data/users":                             accessTokenScopeRule("log:read"),
+	"GET /api/data/daily":                             accessTokenScopeRule("log:read"),
 	"GET /api/data/self":                              accessTokenScopeRule("usage:read"),
 	"GET /api/data/flow":                              accessTokenScopeRule("log:read"),
 	"GET /api/data/flow/self":                         accessTokenScopeRule("usage:read"),
