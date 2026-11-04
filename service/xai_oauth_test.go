@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 // newTestXaiClient 指向本机假服务的授权客户端。生产主机仍强制 https，
@@ -475,4 +477,21 @@ func serverURL(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func TestXaiRefreshTokenWithProxy(t *testing.T) {
+	// 代理地址不可用时退回默认客户端，不能 panic，也不能把令牌发出去
+	key := &XaiOAuthKey{AccessToken: "at", RefreshToken: "rt", TokenURL: "https://auth.x.ai/oauth2/token"}
+	if _, err := XaiRefreshTokenWithProxy(context.Background(), key, "://not-a-url", dto.ChannelSettings{}); err == nil {
+		t.Fatalf("unreachable upstream must fail")
+	}
+	// 空代理与 XaiRefreshToken 行为一致（缺刷新令牌即终局）
+	if _, err := XaiRefreshTokenWithProxy(context.Background(), &XaiOAuthKey{AccessToken: "at"}, "", dto.ChannelSettings{}); err != ErrXaiRefreshTerminal {
+		t.Fatalf("err = %v, want ErrXaiRefreshTerminal", err)
+	}
+	// 主机不在白名单的令牌地址一律拒绝，与走不走代理无关
+	foreign := &XaiOAuthKey{AccessToken: "at", RefreshToken: "rt", TokenURL: "https://evil.example/token"}
+	if _, err := XaiRefreshTokenWithProxy(context.Background(), foreign, "", dto.ChannelSettings{}); err != ErrXaiIssuer {
+		t.Fatalf("err = %v, want ErrXaiIssuer", err)
+	}
 }

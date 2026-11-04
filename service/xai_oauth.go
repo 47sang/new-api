@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 // xAI 订阅登录：OAuth 2.0 设备码授权（RFC 8628），复用 xAI 官方命令行工具的公开客户端。
@@ -627,8 +628,21 @@ func XaiCurrentDeviceLogin() (*XaiDeviceChallenge, string, bool) {
 }
 
 // XaiRefreshToken 用刷新令牌换一组新的。终局错误返回 ErrXaiRefreshTerminal。
+// 出站只走环境代理；渠道上单独配了代理的用 XaiRefreshTokenWithProxy。
 func XaiRefreshToken(ctx context.Context, key *XaiOAuthKey) (*XaiOAuthKey, error) {
 	return defaultXaiOAuthClient().refresh(ctx, key)
+}
+
+// XaiRefreshTokenWithProxy 同上，但出站走渠道上配的代理（墙内访问 xAI 必须配代理，
+// 续期若绕过它会在令牌到期后静默失效）。拿不到代理客户端时退回默认客户端。
+func XaiRefreshTokenWithProxy(ctx context.Context, key *XaiOAuthKey, proxyURL string, settings dto.ChannelSettings) (*XaiOAuthKey, error) {
+	client, err := GetHttpClientWithProxySettings(strings.TrimSpace(proxyURL), settings)
+	if err != nil || client == nil {
+		client = &http.Client{Timeout: defaultHTTPTimeout}
+	}
+	c := defaultXaiOAuthClient()
+	c.http = client
+	return c.refresh(ctx, key)
 }
 
 // ---------- 内部工具 ----------

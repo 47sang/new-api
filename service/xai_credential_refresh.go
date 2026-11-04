@@ -36,7 +36,8 @@ func RefreshXaiChannelCredential(ctx context.Context, channelID int, resetCaches
 	refreshCtx, cancel := context.WithTimeout(ctx, xaiCredentialRefreshTimeout)
 	defer cancel()
 
-	next, err := XaiRefreshToken(refreshCtx, key)
+	// 出站走渠道自己配的代理：墙内直连不了 xAI，续期绕过代理会在到期后静默失效
+	next, err := XaiRefreshTokenWithProxy(refreshCtx, key, ch.GetSetting().Proxy, ch.GetSetting())
 	if err != nil {
 		return nil, nil, err
 	}
