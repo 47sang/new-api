@@ -28,6 +28,11 @@ services:
       # 覆盖 .env 里的 SQLITE_PATH（宿主机绝对路径在容器内无效），指向挂载卷 /data
       # 注意 SQLITE_PATH 是完整 DSN，必须带上默认的 pragma 参数（见 common/database.go）
       - SQLITE_PATH=/data/sqlite.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate
+      # 容器访问宿主机 Clash 代理（127.0.0.1 在容器内无效，需 host.docker.internal）
+      # Clash 需开启 Allow LAN；改端口时同步改下面两行
+      # - HTTP_PROXY=http://host.docker.internal:7897
+      # - HTTPS_PROXY=http://host.docker.internal:7897
+      # - NO_PROXY=localhost,127.0.0.1,redis,new-api
       - ERROR_LOG_ENABLED=true # 是否启用错误日志记录 (Whether to enable error log recording)
       - BATCH_UPDATE_ENABLED=true  # 是否启用批量更新 (Whether to enable batch update)
       - NODE_NAME=new-api-node-1  # 节点名称，用于审计日志中标识节点身份；多节点/容器部署时建议设置 (Node name used in audit logs; recommended when running multiple instances or in containers)
