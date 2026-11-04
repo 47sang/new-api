@@ -28,8 +28,11 @@ services:
       # 覆盖 .env 里的 SQLITE_PATH（宿主机绝对路径在容器内无效），指向挂载卷 /data
       # 注意 SQLITE_PATH 是完整 DSN，必须带上默认的 pragma 参数（见 common/database.go）
       - SQLITE_PATH=/data/sqlite.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate
-      # 容器访问宿主机 Clash 代理（127.0.0.1 在容器内无效，需 host.docker.internal）
-      # Clash 需开启 Allow LAN；改端口时同步改下面两行
+      # 不要在这里设全局 HTTP_PROXY/HTTPS_PROXY：会让容器内所有出站（含国内上游）都走代理。
+      # 只让 xAI 等个别渠道走 Clash：在管理后台 → 渠道 → 编辑 →「代理地址」填
+      #   http://host.docker.internal:7897
+      # （容器访问宿主机 Clash；127.0.0.1 在容器内无效。Clash 需开启 Allow LAN。）
+      # 若仍要用进程级全局代理，再取消注释下面三行：
       # - HTTP_PROXY=http://host.docker.internal:7897
       # - HTTPS_PROXY=http://host.docker.internal:7897
       # - NO_PROXY=localhost,127.0.0.1,redis,new-api

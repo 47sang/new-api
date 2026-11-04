@@ -55,10 +55,12 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			constant.EndpointTypeOpenAIAlphaSearch,
 		}
 	case constant.ChannelTypeXaiSub:
-		// 订阅渠道只打 xAI Responses；聊天入口由网关转成 Responses。
+		// 上游只打 xAI Responses；OpenAI Chat / Anthropic Messages 由网关转成 Responses。
 		endpointTypes = []constant.EndpointType{
 			constant.EndpointTypeOpenAIResponse,
 			constant.EndpointTypeOpenAIResponseCompact,
+			constant.EndpointTypeOpenAI,
+			constant.EndpointTypeAnthropic,
 		}
 	default:
 		if IsOpenAIResponseOnlyModel(modelName) {

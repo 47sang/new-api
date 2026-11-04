@@ -109,6 +109,10 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if request.Model == "" && info != nil {
 		request.Model = info.UpstreamModelName
 	}
+	// xAI 的 Responses 不接受 OpenAI 的 metadata。Claude Code 走 /v1/messages 时，
+	// Claude→Responses 转换会把 Anthropic 的 metadata（如 user_id）原样拷过去，
+	// 上游会以 "Argument not supported: metadata" 直接 400。
+	request.Metadata = nil
 	return request, nil
 }
 

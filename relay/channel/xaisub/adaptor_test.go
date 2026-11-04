@@ -1,6 +1,7 @@
 package xaisub
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,6 +103,23 @@ func TestEmbeddedModelConversionIsShared(t *testing.T) {
 	// 解析失败的 key 在适配器层就被挡住，不会走到请求里
 	_, err := service.ParseXaiOAuthKey("nope")
 	assert.Error(t, err)
+}
+
+// TestConvertOpenAIResponsesRequestDropsMetadata Claude Code 带 Anthropic metadata
+// 经 Claude→Responses 转换后仍在请求里；xAI 不认该字段，必须在出站前清掉。
+func TestConvertOpenAIResponsesRequestDropsMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	req := dto.OpenAIResponsesRequest{
+		Model:    "grok-4",
+		Metadata: json.RawMessage(`{"user_id":"claude-code-user"}`),
+	}
+	got, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, &common.RelayInfo{}, req)
+	require.NoError(t, err)
+	out, ok := got.(dto.OpenAIResponsesRequest)
+	require.True(t, ok)
+	assert.Equal(t, "grok-4", out.Model)
+	assert.Nil(t, out.Metadata)
 }
 
 // TestDoRequestUsesSubscriptionAuth 回归：嵌入的 xai.DoRequest 会把 *xai.Adaptor
