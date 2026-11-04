@@ -3,6 +3,7 @@ package xaisub
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relay/common"
@@ -100,6 +101,32 @@ func TestEmbeddedModelConversionIsShared(t *testing.T) {
 	// 解析失败的 key 在适配器层就被挡住，不会走到请求里
 	_, err := service.ParseXaiOAuthKey("nope")
 	assert.Error(t, err)
+}
+
+// TestDoRequestUsesSubscriptionAuth 回归：嵌入的 xai.DoRequest 会把 *xai.Adaptor
+// 传进 DoApiRequest，从而绕过本包 SetupRequestHeader，把整段 OAuth JSON / 明文
+// sk- 当 API Key 发出（上游 Incorrect API key）。本包 DoRequest 必须先走订阅解析。
+func TestDoRequestUsesSubscriptionAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	info := &common.RelayInfo{
+		ChannelMeta: &common.ChannelMeta{
+			ApiKey:         "sk-plain-not-oauth-json",
+			ChannelBaseUrl: "https://api.x.ai",
+		},
+		RelayMode:      relayconstant.RelayModeResponses,
+		RequestURLPath: "/v1/responses",
+	}
+
+	_, err := (&Adaptor{}).DoRequest(c, info, strings.NewReader(`{"model":"grok-4"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "setup request header failed")
+	assert.Contains(t, err.Error(), "oauth")
+	assert.NotContains(t, err.Error(), "sk-plain-not-oauth-json")
 }
 
 func newTestContext(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {

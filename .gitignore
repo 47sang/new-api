@@ -33,6 +33,7 @@ electron/dist
 .gomodcache/
 .gocache-temp
 .gopath
+.tools
 .test
 token_estimator_test.go
 skills-lock.json
