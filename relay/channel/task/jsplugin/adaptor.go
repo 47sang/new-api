@@ -820,6 +820,24 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	return a.doFetchDescriptor(baseURL, key, proxy, descriptor)
 }
 
+// CancelUpstream asks the plugin to cancel a queued upstream task. The host
+// must already have checked that the live status is still queued: Seedance and
+// MiniMax use the same request to delete finished records.
+func (a *TaskAdaptor) CancelUpstream(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
+	if task != nil && task.PrivateData.Key != "" {
+		key = task.PrivateData.Key
+	}
+	ctx, err := a.queryContext(task, key, baseURL, proxy)
+	if err != nil {
+		return nil, err
+	}
+	descriptor, err := a.requestDescriptor(pluginruntime.WithFetcher(context.Background(), a.hookFetcher(baseURL, proxy)), "buildCancelRequest", ctx)
+	if err != nil {
+		return nil, err
+	}
+	return a.doFetchDescriptor(baseURL, key, proxy, descriptor)
+}
+
 // hookFetcher sends a driver hook's utils.fetch requests to the hosts its
 // request descriptors may use, through the channel's proxy like poll requests.
 func (a *TaskAdaptor) hookFetcher(baseURL, proxy string) pluginruntime.Fetcher {

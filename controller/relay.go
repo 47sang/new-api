@@ -450,6 +450,12 @@ func RelayTaskPluginEndpoint(c *gin.Context, fallback gin.HandlerFunc) {
 	}
 }
 
+func RelayVideoCancel(c *gin.Context) {
+	if taskErr := relay.RelayVideoCancel(c); taskErr != nil {
+		respondTaskError(c, taskErr)
+	}
+}
+
 func RelayTaskFetch(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {

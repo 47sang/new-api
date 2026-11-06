@@ -441,7 +441,8 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			if req != nil {
 				modelRequest.Model = req.Model
 			}
-		} else if c.Request.Method == http.MethodGet {
+		} else if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
+			// 查询和取消都按已有任务找回渠道，不再按模型重新分流。
 			relayMode = relayconstant.RelayModeVideoFetchByID
 			shouldSelectChannel = false
 			modelRequest.Model = getTaskOriginModelName(c)
@@ -456,7 +457,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			}
 			modelRequest.Model = req.Model
 			relayMode = relayconstant.RelayModeVideoSubmit
-		} else if c.Request.Method == http.MethodGet {
+		} else if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 			relayMode = relayconstant.RelayModeVideoFetchByID
 			shouldSelectChannel = false
 			modelRequest.Model = getTaskOriginModelName(c)

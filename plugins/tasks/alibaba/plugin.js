@@ -1253,6 +1253,16 @@ export function buildQueryRequest(ctx) {
   return { url: apiRoot(ctx) + "/api/v1/tasks/" + ctx.taskId, method: "GET", headers: { Authorization: "Bearer " + ctx.apiKey } };
 }
 
+// DashScope cancels only PENDING tasks. RUNNING and terminal tasks are rejected
+// and the call does not delete the task record.
+export function buildCancelRequest(ctx) {
+  return {
+    url: apiRoot(ctx) + "/api/v1/tasks/" + ctx.taskId + "/cancel",
+    method: "POST",
+    headers: { Authorization: "Bearer " + ctx.apiKey, "Content-Type": "application/json" },
+  };
+}
+
 export function parseTaskResult(ctx, body) {
   const output = body.output || {};
   if (output.task_status === "PENDING") return { status: "QUEUED" };

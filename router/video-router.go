@@ -32,6 +32,9 @@ func SetVideoRouter(router *gin.Engine) {
 	videoV1Router.Use(middleware.TokenAuth(), middleware.Distribute())
 	{
 		videoV1Router.GET("/video/generations/:task_id", controller.RelayTaskFetch)
+		// 排队中的视频任务可取消；已经进入上游生成中的请求由控制器拒绝。
+		videoV1Router.DELETE("/video/generations/:task_id", controller.RelayVideoCancel)
+		videoV1Router.DELETE("/videos/:task_id", controller.RelayVideoCancel)
 		// remix 同样是视频任务创建，报文一并录制
 		videoV1Router.POST(
 			"/videos/:video_id/remix",

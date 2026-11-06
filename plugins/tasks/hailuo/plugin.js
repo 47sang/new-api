@@ -725,6 +725,21 @@ export function buildQueryRequest(ctx) {
   };
 }
 
+// MiniMax-H3 DELETE cancels a queued task and deletes a finished record.
+// Running tasks are rejected by the vendor. Older Hailuo models have no
+// equivalent, so the host must not call this for them.
+export function buildCancelRequest(ctx) {
+  const model = ctx.upstreamModel || ctx.model;
+  if (!isH3(model) && String(model || "").indexOf("MiniMax-H3") !== 0) {
+    throw new Error("only queued MiniMax-H3 tasks can be cancelled");
+  }
+  return {
+    url: apiRoot(ctx) + "/v2/video_generation/" + encodeURIComponent(ctx.taskId),
+    method: "DELETE",
+    headers: { Accept: "application/json", Authorization: "Bearer " + ctx.apiKey },
+  };
+}
+
 export function parseTaskResult(ctx, body) {
   const apiError = h3APIError(body);
   if (apiError) {

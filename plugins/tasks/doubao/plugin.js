@@ -962,6 +962,17 @@ export function buildQueryRequest(ctx) {
   };
 }
 
+// Seedance DELETE cancels a queued task. Running tasks reject the call, and
+// the same verb deletes finished records, so the host must only send it while
+// the live status is still queued.
+export function buildCancelRequest(ctx) {
+  return {
+    url: apiRoot(ctx) + "/api/v3/contents/generations/tasks/" + ctx.taskId,
+    method: "DELETE",
+    headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + ctx.apiKey },
+  };
+}
+
 export function parseTaskResult(ctx, body) {
   if (body.status === "queued") return { status: "QUEUED", progress: "10%" };
   if (body.status === "running") return { status: "IN_PROGRESS", progress: "50%" };
