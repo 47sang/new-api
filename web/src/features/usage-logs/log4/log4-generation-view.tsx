@@ -28,6 +28,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { cn } from '@/lib/utils'
 
 import { JsonBlock } from '../components/json-block'
 import { LogCostDisplay } from '../components/log-cost-display'
@@ -50,6 +51,8 @@ export function Log4GenerationView(props: {
   request: ParsedGenerationRequest
   log: UsageLog
   other: LogOtherData
+  /** Override the root layout classes (D2 embeds this without its own scroll). */
+  className?: string
 }) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
@@ -61,7 +64,12 @@ export function Log4GenerationView(props: {
   )
 
   return (
-    <div className='h-full min-h-0 space-y-3 overflow-y-auto pr-1'>
+    <div
+      className={cn(
+        'h-full min-h-0 space-y-3 overflow-y-auto pr-1',
+        props.className
+      )}
+    >
       {/* Model/cost facts lead, mirroring the chat input tab's stats
           header so both input layouts read the same way. */}
       <div className='bg-muted/30 grid gap-1.5 rounded-lg border p-3 sm:grid-cols-2'>

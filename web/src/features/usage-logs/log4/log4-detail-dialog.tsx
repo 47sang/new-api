@@ -46,7 +46,7 @@ import type { UsageLog } from '../data/schema'
 import { formatJsonBody, parseLogOther } from '../lib/format'
 import type { LogOtherData, RequestResponseLog } from '../types'
 import type { Log4DetailTab } from './lib'
-import { Log4GenerationView } from './log4-generation-view'
+import { Log4GenerationDetailView } from './log4-generation-detail-view'
 import { Log4RequestView } from './log4-request-view'
 import { Log4ResponseView } from './log4-response-view'
 import {
@@ -408,16 +408,24 @@ export function Log4DetailDialog(props: Log4DetailDialogProps) {
         </div>
       )
     }
+    // Generation rows (image / video) use a single D2 pane: request modes on
+    // top and result preview below. Input and Output tabs share that view so
+    // prompt parameters stay next to the produced media.
+    if (
+      generationRequest &&
+      (effectiveTab === 'input' || effectiveTab === 'output')
+    ) {
+      return (
+        <Log4GenerationDetailView
+          request={generationRequest}
+          response={parsedResponse}
+          data={data}
+          log={log}
+          other={other}
+        />
+      )
+    }
     if (effectiveTab === 'input') {
-      if (generationRequest) {
-        return (
-          <Log4GenerationView
-            request={generationRequest}
-            log={log}
-            other={other}
-          />
-        )
-      }
       if (!chatRequest) {
         return (
           <div className='flex h-full flex-col items-center justify-center gap-3 px-6 text-center'>

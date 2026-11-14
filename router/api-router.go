@@ -405,6 +405,9 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
 			taskRoute.GET("", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)
+			// Log4 generation detail: owner/admin can read the stored upstream
+			// result URL to embed a video player (task list DTOs still omit it).
+			taskRoute.GET("/:task_id/result-preview", middleware.UserAuth(), controller.GetDashboardTaskResultPreview)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")

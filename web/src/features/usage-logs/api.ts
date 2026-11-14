@@ -34,6 +34,7 @@ import type {
   RequestResponseLog,
   SessionTurnsResponse,
   TaskArtifactsResponse,
+  TaskResultPreview,
   UserInfo,
 } from './types'
 
@@ -203,6 +204,24 @@ export async function getTaskArtifacts(taskId: string) {
     taskArtifactRequestConfig
   )
   return parseTaskArtifactsResponse(response.data)
+}
+
+/**
+ * Fetch the stored upstream result URL for a public task id (Log4 video
+ * preview). Owners and admins may call it; the task list DTO still omits
+ * result_url.
+ */
+export async function getTaskResultPreview(taskId: string): Promise<{
+  success: boolean
+  message: string
+  data?: TaskResultPreview | null
+  code?: string
+}> {
+  const res = await api.get(
+    `/api/task/${encodeURIComponent(taskId)}/result-preview`,
+    taskArtifactRequestConfig
+  )
+  return res.data
 }
 
 // ============================================================================

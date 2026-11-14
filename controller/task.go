@@ -91,6 +91,60 @@ func GetDashboardTaskArtifacts(c *gin.Context) {
 	writeTaskArtifacts(c, task, true)
 }
 
+// GetDashboardTaskResultPreview returns the stored upstream result URL for the
+// Log4 generation detail pane. Unlike the task list DTO (which deliberately
+// omits result_url), this endpoint exposes PrivateData.ResultURL to the task
+// owner or an admin so the console can embed a video player. Callers must
+// treat the URL as potentially expiring and credential-bearing.
+func GetDashboardTaskResultPreview(c *gin.Context) {
+	taskID := strings.TrimSpace(c.Param("task_id"))
+	task, exists, err := getTaskForArtifactRequest(c, taskID)
+	if err != nil {
+		common.ApiErrorT(c, "Failed to query task")
+		return
+	}
+	if !exists || task == nil || !task.ResultRetrievable() {
+		common.ApiErrorStatus(c, http.StatusNotFound,
+			common.NewMessage("Task not found"),
+			gin.H{"code": "task_not_found"})
+		return
+	}
+
+	payload := gin.H{
+		"task_id": task.TaskID,
+		"status":  string(task.Status),
+	}
+	if task.Status == model.TaskStatusSuccess {
+		resultURL := strings.TrimSpace(task.GetResultURL())
+		if taskResultPreviewURLPlayable(resultURL) {
+			payload["result_url"] = resultURL
+			payload["format"] = taskResultPreviewFormat(resultURL)
+		}
+	}
+	c.Header("Cache-Control", "private, no-store")
+	common.ApiSuccess(c, payload)
+}
+
+func taskResultPreviewURLPlayable(value string) bool {
+	return taskFailReasonIsLegacyResultURL(value)
+}
+
+func taskResultPreviewFormat(resultURL string) string {
+	lower := strings.ToLower(resultURL)
+	switch {
+	case strings.Contains(lower, ".webm"):
+		return "webm"
+	case strings.Contains(lower, ".mov"):
+		return "mov"
+	case strings.HasPrefix(lower, "data:video/webm"):
+		return "webm"
+	case strings.HasPrefix(lower, "data:video/quicktime"):
+		return "mov"
+	default:
+		return "mp4"
+	}
+}
+
 func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 	c.Header("Cache-Control", "private, no-store")
 	artifacts, err := projectTaskArtifacts(task)

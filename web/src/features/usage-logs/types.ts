@@ -422,6 +422,21 @@ export interface TaskArtifactsResponse {
   }
 }
 
+/** Log4 generation detail: upstream result URL for an async task. */
+export interface TaskResultPreview {
+  task_id: string
+  status: string
+  result_url?: string
+  format?: string
+}
+
+export interface TaskResultPreviewResponse {
+  success: boolean
+  message?: string
+  code?: string
+  data?: TaskResultPreview | null
+}
+
 // ============================================================================
 // Common Log Types
 // ============================================================================

@@ -30,6 +30,7 @@ const {
   getRequestResponseByLogId,
   getSelfRequestResponseByRequestId,
   getSessionTurns,
+  getTaskResultPreview,
 } = await import('../../api')
 const { Log4DetailDialog } = await import('../log4-detail-dialog')
 const { resolveDetailTab } = await import('../lib')
@@ -38,6 +39,7 @@ vi.mock('../../api', () => ({
   getRequestResponseByLogId: vi.fn(),
   getSelfRequestResponseByRequestId: vi.fn(),
   getSessionTurns: vi.fn(),
+  getTaskResultPreview: vi.fn(),
 }))
 
 vi.mock('@/lib/lobe-icon', () => ({
@@ -47,6 +49,7 @@ vi.mock('@/lib/lobe-icon', () => ({
 const mockedAdminFetch = vi.mocked(getRequestResponseByLogId)
 const mockedSelfFetch = vi.mocked(getSelfRequestResponseByRequestId)
 const mockedSessionFetch = vi.mocked(getSessionTurns)
+const mockedTaskPreview = vi.mocked(getTaskResultPreview)
 
 const i18n = createInstance()
 await i18n.use(initReactI18next).init({
@@ -143,6 +146,8 @@ beforeEach(() => {
   mockedAdminFetch.mockReset()
   mockedSelfFetch.mockReset()
   mockedSessionFetch.mockReset()
+  mockedTaskPreview.mockReset()
+  mockedTaskPreview.mockResolvedValue({ success: true, message: '', data: null })
 })
 
 afterEach(() => {
@@ -707,8 +712,11 @@ describe('Log4DetailDialog', () => {
     expect(screen.getByText('task_abc')).toBeInTheDocument()
     // The raw video status is normalized to the shared task status label.
     expect(screen.getByText('Queued')).toBeInTheDocument()
-    // Copying the task id goes through the shared CopyButton.
-    await user.click(screen.getByRole('button', { name: 'Copy to clipboard' }))
+    // D2 also renders copy controls on the prompt block; pick the Task ID one.
+    const copyButtons = screen.getAllByRole('button', {
+      name: 'Copy to clipboard',
+    })
+    await user.click(copyButtons[copyButtons.length - 1])
     expect(writeText).toHaveBeenCalledWith('task_abc')
   })
 
