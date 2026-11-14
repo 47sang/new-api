@@ -289,6 +289,78 @@ describe('Log4DetailDialog', () => {
     expect(screen.getByText('Request Body')).toBeInTheDocument()
   })
 
+  test('lays out the raw tab as a side-by-side request/response split with expand', async () => {
+    const user = userEvent.setup()
+    const longRequest = JSON.stringify(
+      {
+        model: 'mimo-v2.5-tts-voicedesign',
+        messages: [
+          {
+            role: 'user',
+            content: `prompt-${'A'.repeat(2200)}`,
+          },
+        ],
+        audio: { format: 'wav' },
+      },
+      null,
+      2
+    )
+    const longResponse = JSON.stringify(
+      {
+        id: 'resp-1',
+        choices: [
+          {
+            message: {
+              audio: { id: 'aud-1', data: 'B'.repeat(2200) },
+            },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+      null,
+      2
+    )
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-raw-split',
+        request_body: longRequest,
+        response_body: longResponse,
+        is_stream: false,
+        is_completed: true,
+        response_size: longResponse.length,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+    renderDialog({
+      log: buildLog({}),
+      isAdmin: true,
+      initialTab: 'raw',
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText('Request Body')).toBeInTheDocument()
+    )
+    expect(screen.getByText('Response Body')).toBeInTheDocument()
+    expect(screen.getByText('Status Code: 200')).toBeInTheDocument()
+
+    const split = screen.getByTestId('log4-raw-split')
+    expect(split).toHaveClass('md:grid-cols-2')
+    expect(split).toContainElement(screen.getByText('Request Body'))
+    expect(split).toContainElement(screen.getByText('Response Body'))
+
+    // Each long pane keeps its own Expand control (not a single shared one).
+    const expandButtons = screen.getAllByRole('button', { name: 'Expand' })
+    expect(expandButtons.length).toBeGreaterThanOrEqual(2)
+    await user.click(expandButtons[0])
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument()
+    // The other pane still offers Expand independently.
+    expect(
+      screen.getAllByRole('button', { name: 'Expand' }).length
+    ).toBeGreaterThanOrEqual(1)
+  })
+
   test('shows an error state with retry when the fetch fails', async () => {
     mockedAdminFetch.mockRejectedValue(new Error('backend exploded'))
     renderDialog({ log: buildLog({}), isAdmin: true })

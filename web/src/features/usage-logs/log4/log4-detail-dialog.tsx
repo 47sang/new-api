@@ -75,14 +75,14 @@ type Log4DetailQueryData =
 const REQUEST_RESPONSE_RECORDING_DISABLED =
   'REQUEST_RESPONSE_RECORDING_DISABLED'
 
-/** Raw tab: the stored request/response bodies as pretty-printed JSON. */
+/** Raw tab: stored request/response bodies side by side (left request, right response). */
 function Log4RawView(props: { data: RequestResponseLog }) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const data = props.data
 
   return (
-    <div className='h-full min-h-0 space-y-3 overflow-y-auto pr-1'>
+    <div className='flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1'>
       <div className='flex flex-wrap items-center gap-2'>
         {data.status_code > 0 && (
           <span
@@ -107,32 +107,50 @@ function Log4RawView(props: { data: RequestResponseLog }) {
           </span>
         )}
       </div>
-      {data.request_body ? (
-        <JsonBlock
-          label={t('Request Body')}
-          content={formatJsonBody(data.request_body)}
-          copiedText={copiedText}
-          copyToClipboard={copyToClipboard}
-        />
-      ) : (
-        <div className='text-muted-foreground text-xs'>
-          {t('No request body recorded')}
+      {/* Desktop: request | response; narrow screens stack to keep both readable. */}
+      <div
+        data-testid='log4-raw-split'
+        className='grid min-h-0 flex-1 grid-cols-1 items-start gap-3 md:grid-cols-2'
+      >
+        <div className='min-w-0'>
+          {data.request_body ? (
+            <JsonBlock
+              label={t('Request Body')}
+              content={formatJsonBody(data.request_body)}
+              copiedText={copiedText}
+              copyToClipboard={copyToClipboard}
+            />
+          ) : (
+            <div className='space-y-1.5'>
+              <span className='text-xs font-semibold'>{t('Request Body')}</span>
+              <div className='text-muted-foreground text-xs'>
+                {t('No request body recorded')}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-      {data.response_body ? (
-        <JsonBlock
-          label={t('Response Body')}
-          content={formatJsonBody(data.response_body, data.is_stream)}
-          copiedText={copiedText}
-          copyToClipboard={copyToClipboard}
-        />
-      ) : (
-        <div className='text-muted-foreground text-xs'>
-          {data.is_completed
-            ? t('No response body')
-            : t('Response body not recorded (binary response or interrupted)')}
+        <div className='min-w-0'>
+          {data.response_body ? (
+            <JsonBlock
+              label={t('Response Body')}
+              content={formatJsonBody(data.response_body, data.is_stream)}
+              copiedText={copiedText}
+              copyToClipboard={copyToClipboard}
+            />
+          ) : (
+            <div className='space-y-1.5'>
+              <span className='text-xs font-semibold'>{t('Response Body')}</span>
+              <div className='text-muted-foreground text-xs'>
+                {data.is_completed
+                  ? t('No response body')
+                  : t(
+                      'Response body not recorded (binary response or interrupted)'
+                    )}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
       {data.response_size > 0 && (
         <div className='text-muted-foreground text-xs'>
           {t('Response Size')}: {(data.response_size / 1024).toFixed(1)} KB
