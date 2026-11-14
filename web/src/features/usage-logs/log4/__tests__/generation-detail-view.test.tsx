@@ -162,4 +162,90 @@ describe('Log4GenerationDetailView', () => {
     await user.click(jsonButtons[jsonButtons.length - 1])
     expect(screen.getByText(/"task_id": "task_abc"/)).toBeInTheDocument()
   })
+
+  test('shows the prompt with reference and generated image previews', async () => {
+    const user = userEvent.setup()
+    const queryClient = createAppQueryClient()
+    queryClient.setDefaultOptions({ queries: { retry: false } })
+    const prompt = 'A red bicycle parked by a lake'
+    const referenceUrl = 'https://cdn.example/reference.png'
+    const generatedUrl = 'https://cdn.example/generated.png'
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          <Log4GenerationDetailView
+            request={{
+              format: 'generation',
+              prompt,
+              params: [
+                { key: 'size', value: '1024x1024' },
+                { key: 'model', value: 'seedream-demo' },
+              ],
+              images: [{ url: referenceUrl }],
+            }}
+            response={{
+              format: 'openai',
+              images: [
+                { url: generatedUrl },
+                { url: 'data:image/png;base64,AAAA' },
+              ],
+            }}
+            data={{
+              id: 2,
+              request_id: 'req-image',
+              request_body: JSON.stringify({
+                model: 'seedream-demo',
+                prompt,
+                size: '1024x1024',
+                image: referenceUrl,
+              }),
+              response_body: JSON.stringify({
+                created: 1700000000,
+                data: [
+                  { url: generatedUrl },
+                  { b64_json: 'AAAA' },
+                ],
+              }),
+              is_stream: false,
+              is_completed: true,
+              response_size: 120,
+              status_code: 200,
+              session_id: '',
+              created_at: 1700000000,
+            }}
+            log={
+              {
+                ...log,
+                id: 43,
+                model_name: 'seedream-demo',
+                request_id: 'req-image',
+                other: JSON.stringify({
+                  request_path: '/v1/images/generations',
+                }),
+              } as never
+            }
+            other={{ request_path: '/v1/images/generations' }}
+          />
+        </QueryClientProvider>
+      </I18nextProvider>
+    )
+
+    // Request side: prompt + reference thumbnail.
+    expect(screen.getByText(prompt)).toBeInTheDocument()
+    expect(screen.getByText('Reference Images')).toBeInTheDocument()
+    // Result side: generated image gallery.
+    expect(screen.getByText('Generated Images')).toBeInTheDocument()
+    const thumbs = screen.getAllByRole('button', {
+      name: /Open image \d+ of \d+/,
+    })
+    // One reference + two generated thumbnails.
+    expect(thumbs).toHaveLength(3)
+
+    await user.click(thumbs[1])
+    expect(screen.getByRole('img', { name: 'Image Preview' })).toHaveAttribute(
+      'src',
+      generatedUrl
+    )
+  })
 })

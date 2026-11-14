@@ -770,6 +770,54 @@ describe('Log4DetailDialog', () => {
     await waitFor(() => expect(screen.getByText('Say hi')).toBeInTheDocument())
   })
 
+  test('shows image-generation prompt and generated image previews together', async () => {
+    const user = userEvent.setup()
+    const prompt = 'A watercolor fox in snow'
+    const generatedUrl = 'https://cdn.example/fox.png'
+    mockedAdminFetch.mockResolvedValue(
+      asResult({
+        id: 1,
+        request_id: 'req-img',
+        request_body: JSON.stringify({
+          model: 'seedream-demo',
+          prompt,
+          size: '1024x1024',
+          n: 1,
+        }),
+        response_body: JSON.stringify({
+          created: 1700000000,
+          data: [{ url: generatedUrl }, { b64_json: 'AAAA' }],
+        }),
+        is_stream: false,
+        is_completed: true,
+        response_size: 160,
+        status_code: 200,
+        created_at: 1700000000,
+      })
+    )
+
+    renderDialog({
+      log: buildLog({
+        model_name: 'seedream-demo',
+        other: JSON.stringify({ request_path: '/v1/images/generations' }),
+      }),
+      isAdmin: true,
+      initialTab: 'output',
+    })
+
+    await waitFor(() => expect(screen.getByText(prompt)).toBeInTheDocument())
+    expect(screen.getByText('Generated Images')).toBeInTheDocument()
+    const thumbs = screen.getAllByRole('button', {
+      name: /Open image \d+ of \d+/,
+    })
+    expect(thumbs.length).toBeGreaterThanOrEqual(1)
+    await user.click(thumbs[0])
+    expect(screen.getByRole('img', { name: 'Image Preview' })).toHaveAttribute(
+      'src',
+      generatedUrl
+    )
+  })
+
   test('lists every turn of the session and switches to the clicked one', async () => {
     mockedAdminFetch.mockResolvedValue(
       asResult({
