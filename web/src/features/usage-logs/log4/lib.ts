@@ -30,7 +30,7 @@ import type { GetLogsParams } from '../types'
 
 /** Log filters as seen by the table, with the time window already frozen. */
 export interface Log4Filters {
-  /** LOG_TYPE_FILTERS value ('0' = all types); defaults to consume ('2'). */
+  /** LOG_TYPE_FILTERS value ('0' = all types); defaults to all types. */
   type: string
   model: string
   /** Frozen window start, in seconds (undefined = no lower bound). */
@@ -42,8 +42,8 @@ export interface Log4Filters {
 /** Backend hard cap on page_size (common/page_info.go). */
 export const LOG4_PAGE_SIZE = 100
 
-/** Default log type filter: consume logs only. */
-export const LOG4_DEFAULT_TYPE = '2'
+/** Default log type filter: all types (consume + error, etc.). */
+export const LOG4_DEFAULT_TYPE = LOG_TYPE_ALL_VALUE
 
 export const LOG4_DEFAULT_TIME_RANGE = '24h'
 

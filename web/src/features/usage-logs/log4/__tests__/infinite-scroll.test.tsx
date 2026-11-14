@@ -234,7 +234,8 @@ describe('Log4Table infinite scroll', () => {
     const params = requestedPageParams()[0]
     expect(params.p).toBe(1)
     expect(params.page_size).toBe(PAGE_SIZE)
-    expect(params.type).toBe(2)
+    // All-types default omits type so the backend returns every log type.
+    expect(params.type).toBeUndefined()
     expect(params.end_timestamp).toBe(baseFilters.endSeconds)
   })
 
