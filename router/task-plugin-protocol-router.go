@@ -39,6 +39,9 @@ func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, 
 		return []gin.HandlerFunc{
 			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(),
 			middleware.ModelRequestRateLimit(), middleware.RouteTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
+			// 与 /v1/video/generations、openai_video.create 一致：录制生图/改图出入参，
+			// 供 Log4 详情查看提示词；二进制响应体仍按中间件既有规则跳过落库
+			middleware.ResponseRecorderMiddleware(model.SaveRequestResponseLog),
 			func(c *gin.Context) {
 				controller.RelayTaskPluginEndpoint(c, func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIImage) })
 			},

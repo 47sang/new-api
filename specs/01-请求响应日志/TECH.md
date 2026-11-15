@@ -202,10 +202,12 @@ LOG_DB.Clauses(clauses.OnConflict{
 
 | 路由组 | 中间件 | 排除场景 |
 |---|---|---|
-| `httpRouter` (`/v1/...`) | `ResponseRecorderMiddleware` | `/v1/realtime`（WS）单独路由组 |
+| `httpRouter` (`/v1/...`) | `ResponseRecorderMiddleware` | `/v1/realtime`（WS）单独路由组；`/v1/images/generations` 与 `/v1/images/edits` 已迁到 host protocol，不在本组注册 |
 | `playgroundRouter` (`/pg/...`) | `ResponseRecorderMiddleware` | — |
 | `relayGeminiRouter` (`/v1beta/...`) | `ResponseRecorderMiddleware` | — |
 | `relayMjRouter` + `relayMjModeRouter`（共用 `registerMjRouterGroup`） | `ResponseRecorderMiddleware` | `GET /image/:id`（二进制图片，注册于 Use 之前，天然不带中间件） |
+| host protocol `openai_image.generate` / `openai_image.edit`（`/v1/images/generations`、`/v1/images/edits`） | `ResponseRecorderMiddleware`（与视频创建对齐；2026-11-15 补挂） | 二进制响应体仍跳过落库，请求体照常记录 |
+| host protocol `openai_video.create`（及 `/v1/video/generations`） | `ResponseRecorderMiddleware` | — |
 
 ### 3.6 API 路由
 
